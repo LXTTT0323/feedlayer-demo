@@ -1,7 +1,8 @@
 # Product 0.5 demo — FeedLayer
 
 **Date:** 2026-05-08 (initial)  
-**Stack:** Next.js 16, React 19, Tailwind 4, TypeScript.
+**Stack:** Next.js 16, React 19, Tailwind 4, TypeScript.  
+**Remote:** [github.com/LXTTT0323/feedlayer-demo](https://github.com/LXTTT0323/feedlayer-demo)
 
 ## What this iteration proves
 
