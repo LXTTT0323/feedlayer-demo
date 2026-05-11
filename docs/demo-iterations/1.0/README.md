@@ -34,15 +34,20 @@ Reasons:
 
 | Variable | Purpose |
 |----------|---------|
-| `FEEDLAYER_LLM_PROVIDER` | `auto` (default) \| `openai` \| `anthropic` \| `google` |
-| `OPENAI_API_KEY` | If set (and provider allows), OpenAI is used. |
+| `FEEDLAYER_LLM_PROVIDER` | `auto` (default) \| `openai` \| `openrouter` \| `anthropic` \| `google` |
+| `OPENAI_API_KEY` | Official OpenAI API key (chat completions). |
+| `OPENROUTER_API_KEY` | [OpenRouter](https://openrouter.ai/) key: uses the **same OpenAI SDK path** with `baseURL` `https://openrouter.ai/api/v1` unless overridden. |
+| `FEEDLAYER_OPENAI_BASE_URL` or `OPENAI_BASE_URL` | Custom OpenAI-compatible API base (e.g. other proxies). If only `OPENROUTER_API_KEY` is set, base URL defaults to OpenRouter. |
+| `OPENROUTER_HTTP_REFERER` / `OPENROUTER_APP_TITLE` | Optional headers OpenRouter recommends for rankings. |
 | `ANTHROPIC_API_KEY` | If set, Anthropic is used. |
 | `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` | If set, Google Generative Language API (Gemini) is used. |
-| `FEEDLAYER_OPENAI_MODEL` | Default: `gpt-4o-mini` (override to newer chat models as your org allows). |
+| `FEEDLAYER_OPENAI_MODEL` | Default: `gpt-4o-mini`. On OpenRouter use slugs like `openai/gpt-4o-mini` or `google/gemini-2.0-flash-001`. |
 | `FEEDLAYER_ANTHROPIC_MODEL` | Default: `claude-3-5-haiku-latest` (cheap JSON); override to Sonnet for harder catalogs. |
 | `FEEDLAYER_GOOGLE_MODEL` | Default: `gemini-2.0-flash` or org-approved **Gemini 2.5 Pro** id when you standardize it (e.g. preview IDs change — keep in env, not code). |
 
-**`auto` order:** `openai` → `anthropic` → `google` (first with a usable key). Override with `FEEDLAYER_LLM_PROVIDER=google` to force Gemini when keys for multiple providers exist.
+**`auto` order:** OpenAI-compatible (`OPENAI_API_KEY` or `OPENROUTER_API_KEY`) → Anthropic → Google native. Override with `FEEDLAYER_LLM_PROVIDER=google` to force Gemini when several keys exist.
+
+**OpenRouter vs native keys:** Use **OpenRouter** if you want one bill and fast model switching via `FEEDLAYER_OPENAI_MODEL` only. Use **native keys** if you need guaranteed routing, org VPC, or features some gateways do not pass through (e.g. certain JSON modes). This app only needs **chat completions + JSON body**; both work.
 
 ### LLM behavior constraints
 
@@ -81,6 +86,7 @@ Extend `scripts/verify-pipeline.ts` for: xlsx round-trip (optional fixture), new
 
 ## Changelog
 
+- **2026-05-10 (b):** OpenRouter supported via `OPENROUTER_API_KEY` + default `https://openrouter.ai/api/v1`, optional `FEEDLAYER_OPENAI_BASE_URL` / OpenRouter headers; `FEEDLAYER_LLM_PROVIDER=openrouter` alias.
 - **2026-05-10:** Shipped 1.0 pilot: `.xlsx` (first sheet), expanded column mapping + UI summary, split `ai_ready_feed` / `readiness_report` / `summary`, minor-unit prices + machine availability enums, anchored category suggestions, policy slot counts, report dashboard (KPIs, table, row detail drawer), OpenAI-style preview (disclaimed), three JSON downloads, optional LLM (`openai` | `anthropic` | `google`) via env with rules fallback (`src/lib/processPipeline.ts`, `src/lib/llm/enrichCatalog.ts`).
 
 ## Key code paths

@@ -18,15 +18,20 @@ const ResponseSchema = z.object({
 
 export type LlmProvider = "openai" | "anthropic" | "google";
 
+/** OpenAI official API or any OpenAI-compatible gateway (e.g. OpenRouter). */
+function openAiCompatibleConfigured(): boolean {
+  return !!(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY);
+}
+
 function pickProvider(): LlmProvider | null {
   const forced = process.env.FEEDLAYER_LLM_PROVIDER?.toLowerCase();
-  if (forced === "openai" && process.env.OPENAI_API_KEY) return "openai";
+  if ((forced === "openai" || forced === "openrouter") && openAiCompatibleConfigured()) return "openai";
   if (forced === "anthropic" && process.env.ANTHROPIC_API_KEY) return "anthropic";
   if (forced === "google" && (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY))
     return "google";
   if (forced && forced !== "auto") return null;
 
-  if (process.env.OPENAI_API_KEY) return "openai";
+  if (openAiCompatibleConfigured()) return "openai";
   if (process.env.ANTHROPIC_API_KEY) return "anthropic";
   if (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY) return "google";
   return null;
@@ -63,7 +68,23 @@ Rules:
 
 async function callOpenAi(body: string): Promise<string> {
   const OpenAI = (await import("openai")).default;
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("Missing OpenAI-compatible API key");
+
+  const baseURL =
+    process.env.FEEDLAYER_OPENAI_BASE_URL ||
+    process.env.OPENAI_BASE_URL ||
+    (process.env.OPENROUTER_API_KEY ? "https://openrouter.ai/api/v1" : undefined);
+
+  const defaultHeaders: Record<string, string> = {};
+  if (process.env.OPENROUTER_HTTP_REFERER) defaultHeaders["HTTP-Referer"] = process.env.OPENROUTER_HTTP_REFERER;
+  if (process.env.OPENROUTER_APP_TITLE) defaultHeaders["X-Title"] = process.env.OPENROUTER_APP_TITLE;
+
+  const client = new OpenAI({
+    apiKey,
+    baseURL,
+    defaultHeaders: Object.keys(defaultHeaders).length ? defaultHeaders : undefined,
+  });
   const model = process.env.FEEDLAYER_OPENAI_MODEL || "gpt-4o-mini";
   const res = await client.chat.completions.create({
     model,

@@ -197,9 +197,9 @@ export default function HomeClient() {
           )}
 
           <footer className="pt-2 text-xs text-slate-500">
-            Optional LLM: set <span className="font-mono">OPENAI_API_KEY</span>, <span className="font-mono">ANTHROPIC_API_KEY</span>, or{" "}
-            <span className="font-mono">GOOGLE_GENERATIVE_AI_API_KEY</span> on the server. Use{" "}
-            <span className="font-mono">FEEDLAYER_LLM_PROVIDER=auto|openai|anthropic|google</span> to choose.
+            Optional LLM: <span className="font-mono">OPENAI_API_KEY</span> or <span className="font-mono">OPENROUTER_API_KEY</span> (OpenAI-compatible),{" "}
+            <span className="font-mono">ANTHROPIC_API_KEY</span>, or <span className="font-mono">GOOGLE_GENERATIVE_AI_API_KEY</span>.{" "}
+            <span className="font-mono">FEEDLAYER_LLM_PROVIDER=auto|openai|openrouter|anthropic|google</span>
           </footer>
         </div>
       </div>

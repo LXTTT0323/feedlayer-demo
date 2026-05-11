@@ -15,7 +15,7 @@ Pilot-ready **catalog audit** demo: upload **CSV** or **Excel (.xlsx, first shee
 
 ## Optional LLM (server env)
 
-Set **`OPENAI_API_KEY`**, **`ANTHROPIC_API_KEY`**, or **`GOOGLE_GENERATIVE_AI_API_KEY`** / **`GEMINI_API_KEY`**. Use **`FEEDLAYER_LLM_PROVIDER=auto|openai|anthropic|google`**. See [`docs/demo-iterations/1.0/README.md`](docs/demo-iterations/1.0/README.md) for model env vars and limits.
+Set **`OPENAI_API_KEY`** (official) or **`OPENROUTER_API_KEY`** (OpenAI-compatible gateway), **`ANTHROPIC_API_KEY`**, or **`GOOGLE_GENERATIVE_AI_API_KEY`** / **`GEMINI_API_KEY`**. Use **`FEEDLAYER_LLM_PROVIDER=auto|openai|openrouter|anthropic|google`**. See [`docs/demo-iterations/1.0/README.md`](docs/demo-iterations/1.0/README.md) for model env vars and limits.
 
 ## Scripts
 
