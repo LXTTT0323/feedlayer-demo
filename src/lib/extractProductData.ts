@@ -1,19 +1,16 @@
 import type { FeedLayerProduct, ProductMedia, ProductVariant } from "@/types/product";
+import type { TableRow } from "@/lib/columnMapping";
+import { normalizeAvailabilityMachine } from "@/lib/availability";
 
 type CsvRow = Record<string, string>;
 
+export type CatalogAudit = {
+  original_input: Record<string, string>;
+  grouped_row_count: number;
+};
+
 function nonEmpty(v: string | undefined | null): v is string {
   return !!v && v.trim().length > 0;
-}
-
-function normalizeAvailability(raw?: string): string | undefined {
-  if (!nonEmpty(raw)) return undefined;
-  const v = raw.trim().toLowerCase();
-  if (["in stock", "in_stock", "instock", "available", "yes", "true"].includes(v)) return "in stock";
-  if (["out of stock", "out_of_stock", "oos", "no", "false"].includes(v)) return "out of stock";
-  if (["preorder", "pre-order", "pre order"].includes(v)) return "preorder";
-  if (["limited", "low"].includes(v)) return "limited";
-  return raw.trim();
 }
 
 function looksLikeUrl(v?: string): boolean {
@@ -94,20 +91,27 @@ function productKeyFromRow(row: CsvRow, index: number): string {
   return pid || sku || fallback;
 }
 
-export function extractFromCsvRows(rows: CsvRow[]): Omit<FeedLayerProduct, "readiness">[] {
-  const groups = new Map<string, CsvRow[]>();
-  rows.forEach((r, i) => {
-    const k = productKeyFromRow(r, i);
-    const arr = groups.get(k) ?? [];
-    arr.push(r);
-    groups.set(k, arr);
+export function extractFromTableRows(
+  tableRows: TableRow[],
+): { products: Omit<FeedLayerProduct, "readiness">[]; audits: Record<string, CatalogAudit> } {
+  const audits: Record<string, CatalogAudit> = {};
+
+  const groups = new Map<string, { rows: CsvRow[]; firstRaw: Record<string, string> }>();
+  tableRows.forEach((tr, i) => {
+    const k = productKeyFromRow(tr.canonical, i);
+    const g = groups.get(k) ?? { rows: [], firstRaw: { ...tr.raw } };
+    if (g.rows.length === 0) g.firstRaw = { ...tr.raw };
+    g.rows.push(tr.canonical);
+    groups.set(k, g);
   });
 
   const products: Omit<FeedLayerProduct, "readiness">[] = [];
-  for (const [key, groupRows] of groups.entries()) {
+  for (const [key, group] of groups.entries()) {
+    const groupRows = group.rows;
     const first = groupRows[0] ?? {};
-    const title = first.title?.trim() || first.product_name?.trim();
-    const description = first.description?.trim();
+    const title = first.title?.trim();
+    const description = first.description?.trim() || first.supplier_description?.trim();
+
     const category = first.category?.trim();
 
     const media: ProductMedia[] = [];
@@ -125,10 +129,10 @@ export function extractFromCsvRows(rows: CsvRow[]): Omit<FeedLayerProduct, "read
     const variants: ProductVariant[] = groupRows.map((r, idx) => {
       const variantId = (r.variant_id || r.sku || `${key}-v${idx + 1}`).trim();
       const vTitle = (r.title || title || key).trim();
-      const priceAmount = nonEmpty(r.price) ? Number(r.price) : NaN;
+      const priceAmount = nonEmpty(r.price) ? Number(String(r.price).replace(/,/g, "")) : NaN;
       const currency = r.currency?.trim() || "USD";
       const price = Number.isFinite(priceAmount) ? { amount: priceAmount, currency } : undefined;
-      const availability = normalizeAvailability(r.availability);
+      const availability = normalizeAvailabilityMachine(r.availability);
       const options = {
         color: nonEmpty(r.color) ? splitMaybeMulti(r.color)[0] : undefined,
         size: nonEmpty(r.size) ? splitMaybeMulti(r.size)[0] : undefined,
@@ -149,6 +153,11 @@ export function extractFromCsvRows(rows: CsvRow[]): Omit<FeedLayerProduct, "read
       faq: looksLikeUrl(first.faq_url) ? "provided" : "missing",
     } as const;
 
+    audits[key] = {
+      original_input: group.firstRaw,
+      grouped_row_count: groupRows.length,
+    };
+
     products.push({
       product_id: key,
       title: nonEmpty(title) ? title : undefined,
@@ -163,10 +172,19 @@ export function extractFromCsvRows(rows: CsvRow[]): Omit<FeedLayerProduct, "read
     });
   }
 
-  return products;
+  return { products, audits };
 }
 
-export function extractFromListingText(text: string): Omit<FeedLayerProduct, "readiness">[] {
+/** Legacy: canonical rows only (no raw audit). */
+export function extractFromCsvRows(rows: CsvRow[]): Omit<FeedLayerProduct, "readiness">[] {
+  const tableRows: TableRow[] = rows.map((canonical) => ({ raw: { ...canonical }, canonical }));
+  return extractFromTableRows(tableRows).products;
+}
+
+export function extractFromListingText(text: string): {
+  products: Omit<FeedLayerProduct, "readiness">[];
+  audits: Record<string, CatalogAudit>;
+} {
   const t = text.trim();
   const lower = t.toLowerCase();
 
@@ -202,12 +220,13 @@ export function extractFromListingText(text: string): Omit<FeedLayerProduct, "re
   const currency = priceCny && !priceUsd ? "CNY" : "USD";
   const price = Number.isFinite(amount) ? { amount, currency } : undefined;
 
-  const availability =
-    lower.includes("preorder") || lower.includes("pre-order") || /预售|预定|订金/.test(t)
-      ? "preorder"
-      : /现货|有货|库存充足|In stock/i.test(t)
-        ? "in stock"
-        : undefined;
+  let availHint = "";
+  if (lower.includes("preorder") || lower.includes("pre-order") || /预售|预定|订金/.test(t)) availHint = "preorder";
+  else if (/现货|有货|库存充足|in stock/i.test(t)) availHint = "in stock";
+  else if (/缺货|售罄|out of stock|oos/i.test(t)) availHint = "out of stock";
+  else if (/停产|discontinued/i.test(t)) availHint = "discontinued";
+  else if (/订货|backorder/i.test(t)) availHint = "backorder";
+  const availability = normalizeAvailabilityMachine(availHint || undefined);
 
   const title =
     t.split(/[，,。．\.]/)[0]?.slice(0, 80) ||
@@ -227,14 +246,19 @@ export function extractFromListingText(text: string): Omit<FeedLayerProduct, "re
   };
 
   const category =
-    lower.includes("bottle") || /保温杯|水杯|保温瓶/.test(t) ? "Drinkware" :
-    lower.includes("lamp") || /台灯|桌灯/.test(t) ? "Home / Lighting" :
-    lower.includes("yoga") || /瑜伽垫/.test(t) ? "Fitness" :
-    lower.includes("case") || /手机壳|保护壳/.test(t) ? "Accessories" :
-    lower.includes("blender") || /搅拌|榨汁/.test(t) ? "Kitchen Appliances" :
-    undefined;
+    lower.includes("bottle") || /保温杯|水杯|保温瓶/.test(t)
+      ? "Drinkware"
+      : lower.includes("lamp") || /台灯|桌灯/.test(t)
+        ? "Home / Lighting"
+        : lower.includes("yoga") || /瑜伽垫/.test(t)
+          ? "Fitness"
+          : lower.includes("case") || /手机壳|保护壳/.test(t)
+            ? "Accessories"
+            : lower.includes("blender") || /搅拌|榨汁/.test(t)
+              ? "Kitchen Appliances"
+              : undefined;
 
-  return [
+  const products: Omit<FeedLayerProduct, "readiness">[] = [
     {
       product_id: "TEXT-1",
       title,
@@ -248,5 +272,8 @@ export function extractFromListingText(text: string): Omit<FeedLayerProduct, "re
       trust_context: { shipping_policy: "missing", return_policy: "missing", faq: "missing" },
     },
   ];
+  const audits: Record<string, CatalogAudit> = {
+    "TEXT-1": { original_input: { pasted_text: text }, grouped_row_count: 1 },
+  };
+  return { products, audits };
 }
-

@@ -1,11 +1,21 @@
-# FeedLayer — Product 0.5 demo
+# FeedLayer — Product 1.0 catalog audit (pilot)
 
 **Repository:** [github.com/LXTTT0323/feedlayer-demo](https://github.com/LXTTT0323/feedlayer-demo)
 
-Web demo: upload **CSV**, paste **listing text**, or load **sample data** → AI-ready feed preview, missing-field report, readiness score, JSON download.
+Pilot-ready **catalog audit** demo: upload **CSV** or **Excel (.xlsx, first sheet)**, paste **listing text**, or load **sample data** → separated **`ai_ready_feed`**, **`readiness_report`**, and **`summary`**, plus dashboard exports.
 
-- **Iteration docs:** [`docs/demo-iterations/`](docs/demo-iterations/README.md) (each release gets a folder, e.g. `0.5/`, `1.0/`).
-- **Sample file:** [`public/test-feedlayer-sample.csv`](public/test-feedlayer-sample.csv)
+- **Iteration docs:** [`docs/demo-iterations/`](docs/demo-iterations/README.md)
+- **1.0 spec & env:** [`docs/demo-iterations/1.0/README.md`](docs/demo-iterations/1.0/README.md)
+- **Sample CSV:** [`public/test-feedlayer-sample.csv`](public/test-feedlayer-sample.csv)
+
+## API
+
+- `POST /api/process` with **`application/json`** (same bodies as before: `type: csv|text|sample`).
+- `POST /api/process` with **`multipart/form-data`** and field **`file`**: `.csv` or `.xlsx`.
+
+## Optional LLM (server env)
+
+Set **`OPENAI_API_KEY`**, **`ANTHROPIC_API_KEY`**, or **`GOOGLE_GENERATIVE_AI_API_KEY`** / **`GEMINI_API_KEY`**. Use **`FEEDLAYER_LLM_PROVIDER=auto|openai|anthropic|google`**. See [`docs/demo-iterations/1.0/README.md`](docs/demo-iterations/1.0/README.md) for model env vars and limits.
 
 ## Scripts
 
@@ -13,8 +23,6 @@ Web demo: upload **CSV**, paste **listing text**, or load **sample data** → AI
 npm install
 npm run dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000).
 
 ```bash
 npm run lint
@@ -26,4 +34,4 @@ npm run verify
 
 ## Stack
 
-Next.js (App Router), React, Tailwind CSS, TypeScript — see `package.json`.
+Next.js (App Router), React, Tailwind CSS, TypeScript, SheetJS (`xlsx`), optional OpenAI / Anthropic / Gemini HTTP.

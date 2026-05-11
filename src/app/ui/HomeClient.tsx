@@ -7,13 +7,9 @@ import { SampleDataButton } from "@/components/SampleDataButton";
 import { ProcessingSteps } from "@/components/ProcessingSteps";
 import { saveLastResult } from "@/lib/clientStorage";
 import { SAMPLE_HELPERS } from "@/lib/sampleData";
-import type { FeedLayerResult } from "@/types/product";
+import type { FeedLayerFullReport } from "@/types/report";
 
 type Mode = "idle" | "processing";
-
-async function readFileText(file: File): Promise<string> {
-  return await file.text();
-}
 
 export default function HomeClient() {
   const router = useRouter();
@@ -24,16 +20,13 @@ export default function HomeClient() {
 
   const canSubmitText = useMemo(() => pasteText.trim().length > 10, [pasteText]);
 
-  async function process(body: unknown) {
+  async function processJson(body: unknown) {
     setError(null);
     setMode("processing");
     setActiveStep(0);
-
-    // Smooth stepper: advance a few steps while request runs.
     const tick = window.setInterval(() => {
       setActiveStep((s) => Math.min(5, s + 1));
     }, 450);
-
     try {
       const res = await fetch("/api/process", {
         method: "POST",
@@ -44,7 +37,33 @@ export default function HomeClient() {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(j?.error || `Processing failed (${res.status})`);
       }
-      const result = (await res.json()) as FeedLayerResult;
+      const result = (await res.json()) as FeedLayerFullReport;
+      saveLastResult(result);
+      router.push("/results");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Processing failed");
+      setMode("idle");
+    } finally {
+      window.clearInterval(tick);
+    }
+  }
+
+  async function processFile(file: File) {
+    setError(null);
+    setMode("processing");
+    setActiveStep(0);
+    const tick = window.setInterval(() => {
+      setActiveStep((s) => Math.min(5, s + 1));
+    }, 450);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/process", { method: "POST", body: fd });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(j?.error || `Processing failed (${res.status})`);
+      }
+      const result = (await res.json()) as FeedLayerFullReport;
       saveLastResult(result);
       router.push("/results");
     } catch (e) {
@@ -61,17 +80,18 @@ export default function HomeClient() {
         <div className="flex flex-col gap-10">
           <header className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
-              FeedLayer Product 0.5 Demo
+              FeedLayer Product 1.0 — catalog audit pilot
             </div>
             <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900">
               Turn messy product data into AI-ready feeds.
             </h1>
             <p className="mt-4 text-lg leading-7 text-slate-600">
-              Upload a spreadsheet or paste product listing data. FeedLayer generates a feed preview, missing-field report,
-              and AI commerce readiness score.
+              Upload a spreadsheet (CSV or Excel) or paste product listing text. FeedLayer maps columns, normalizes prices and
+              availability, scores readiness, and produces a separated feed plus audit report for pilot sellers.
             </p>
             <div className="mt-5 text-sm text-slate-600">
-              <span className="font-semibold text-slate-900">Coming soon:</span> PDFs, images, and supplier URLs (not in v0.5).
+              <span className="font-semibold text-slate-900">Coming later:</span> multi-sheet picker, PDFs, images, and
+              marketplace connectors.
             </div>
           </header>
 
@@ -81,34 +101,24 @@ export default function HomeClient() {
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="text-sm font-semibold text-slate-900">What’s happening</div>
                 <div className="mt-2 text-sm text-slate-600">
-                  We read your input, map messy columns, normalize variants and attributes, validate missing fields, then score
-                  readiness.
+                  Reading rows, mapping headers, optional LLM enrichment, validating, scoring, and building separated exports
+                  (AI-ready feed vs readiness report).
                 </div>
                 <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  You’ll get:
-                  <ul className="mt-2 list-disc pl-5">
-                    <li>AI-ready feed preview</li>
-                    <li>Missing-field report</li>
-                    <li>Variant + attribute cleanup suggestions</li>
-                    <li>Readiness score + downloadable JSON</li>
-                  </ul>
+                  Designed for small–medium catalogs (100+ SKUs per run). Large files may take longer when LLM is enabled.
                 </div>
               </div>
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-6">
-                <UploadBox
-                  onCsvSelected={async (file) => {
-                    const text = await readFileText(file);
-                    await process({ type: "csv", csvText: text });
-                  }}
-                />
+                <UploadBox onFileSelected={(file) => processFile(file)} />
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="text-sm font-semibold text-slate-900">Paste product listing text</div>
                   <div className="mt-1 text-sm text-slate-600">
-                    Paste unstructured text and we’ll extract a structured product record (no hallucinated facts).
+                    Paste unstructured text and we’ll extract a structured product record (rules first; optional LLM when
+                    configured).
                   </div>
                   <textarea
                     value={pasteText}
@@ -121,7 +131,7 @@ export default function HomeClient() {
                     <button
                       type="button"
                       disabled={!canSubmitText}
-                      onClick={() => process({ type: "text", text: pasteText })}
+                      onClick={() => processJson({ type: "text", text: pasteText })}
                       className={[
                         "rounded-xl px-4 py-2 text-sm font-semibold shadow-sm",
                         canSubmitText ? "bg-teal-600 text-white hover:bg-teal-700" : "bg-slate-200 text-slate-500",
@@ -144,16 +154,16 @@ export default function HomeClient() {
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="text-sm font-semibold text-slate-900">Try sample data</div>
                   <div className="mt-1 text-sm text-slate-600">
-                    Load an intentionally messy sample to see the before/after transformation instantly.
+                    Load an intentionally messy sample catalog (CSV) or a short listing paragraph.
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <SampleDataButton
                       label={SAMPLE_HELPERS.sampleCatalogLabel}
-                      onClick={() => process({ type: "sample", sample: "catalog" })}
+                      onClick={() => processJson({ type: "sample", sample: "catalog" })}
                     />
                     <SampleDataButton
                       label={SAMPLE_HELPERS.sampleTextLabel}
-                      onClick={() => process({ type: "sample", sample: "text" })}
+                      onClick={() => processJson({ type: "sample", sample: "text" })}
                     />
                   </div>
                 </div>
@@ -162,12 +172,11 @@ export default function HomeClient() {
                   <div className="text-sm font-semibold text-slate-900">What you’ll get</div>
                   <div className="mt-4 grid gap-3">
                     {[
-                      "AI-ready product feed preview",
-                      "Missing-field report (per product)",
-                      "Variant cleanup suggestions",
-                      "Attribute normalization suggestions",
-                      "AI commerce readiness score",
-                      "Downloadable JSON output",
+                      "AI-ready feed JSON (prices in minor units, no embedded readiness)",
+                      "Readiness report JSON (per-product scores, missing fields, suggestions)",
+                      "Summary KPIs + product table + row-level audit drawer",
+                      "OpenAI-style feed preview (not an official integration)",
+                      "Three download buttons (feed / readiness / full report)",
                     ].map((x) => (
                       <div key={x} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <div className="mt-1 h-2.5 w-2.5 rounded-full bg-teal-600" />
@@ -188,12 +197,12 @@ export default function HomeClient() {
           )}
 
           <footer className="pt-2 text-xs text-slate-500">
-            This demo generates an <span className="font-semibold">AI-ready feed preview</span>. Platform exports and official
-            integrations are coming later.
+            Optional LLM: set <span className="font-mono">OPENAI_API_KEY</span>, <span className="font-mono">ANTHROPIC_API_KEY</span>, or{" "}
+            <span className="font-mono">GOOGLE_GENERATIVE_AI_API_KEY</span> on the server. Use{" "}
+            <span className="font-mono">FEEDLAYER_LLM_PROVIDER=auto|openai|anthropic|google</span> to choose.
           </footer>
         </div>
       </div>
     </div>
   );
 }
-

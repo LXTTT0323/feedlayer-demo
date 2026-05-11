@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FeedLayer — AI-ready product feed preview",
+  title: "FeedLayer 1.0 — catalog audit & AI-ready feed",
   description:
-    "Upload messy product data, get an AI-ready feed preview, missing-field report, cleanup suggestions, and a readiness score.",
+    "Upload CSV or Excel catalogs, get separated AI-ready feed and readiness reports, column mapping summary, and pilot-ready audit dashboard.",
 };
 
 export default function RootLayout({

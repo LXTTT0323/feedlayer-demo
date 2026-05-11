@@ -4,7 +4,8 @@ Each subfolder documents one **shipped demo snapshot** (scope, test notes, and k
 
 | Folder | Name | App location |
 |--------|------|----------------|
-| `0.5/` | Product 0.5 — CSV + paste + sample, rule-based pipeline | This repo (`feedlayer-demo`) |
+| `0.5/` | Product 0.5 — CSV + paste + sample, rule-based pipeline | Superseded by 1.0 UI/API shape |
+| `1.0/` | Product 1.0 — CSV/XLSX audit, split exports, optional LLM | **Current** (`feedlayer-demo`) |
 
 ---
 

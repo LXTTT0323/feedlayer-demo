@@ -1,4 +1,4 @@
-type CsvRow = Record<string, string>;
+import { buildColumnMappingSummary, rowFromValues, type TableRow } from "@/lib/columnMapping";
 
 function splitCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -27,75 +27,35 @@ function splitCsvLine(line: string): string[] {
   return out.map((s) => s.trim());
 }
 
-function normalizeHeader(h: string): string {
-  return h
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, "");
-}
-
-const ALIASES: Record<string, string> = {
-  productid: "product_id",
-  product_id: "product_id",
-  id: "product_id",
-  sku: "sku",
-  variant_id: "variant_id",
-  variantid: "variant_id",
-  product_name: "title",
-  productname: "title",
-  name: "title",
-  title: "title",
-  desc: "description",
-  description: "description",
-  details: "description",
-  amount: "price",
-  price: "price",
-  cost: "price",
-  currency: "currency",
-  availability: "availability",
-  stock: "availability",
-  inventory: "availability",
-  category: "category",
-  product_type: "category",
-  img: "image_url",
-  image: "image_url",
-  image_url: "image_url",
-  imageurl: "image_url",
-  image_alt_text: "image_alt_text",
-  imagealttext: "image_alt_text",
-  alt_text: "alt_text",
-  alttext: "alt_text",
-  colour: "color",
-  color: "color",
-  size: "size",
-  material: "material",
-  capacity: "capacity",
-  listing_url: "listing_url",
-  return_policy_url: "return_policy_url",
-  shipping_policy_url: "shipping_policy_url",
-  faq_url: "faq_url",
+export type ParsedTable = {
+  rows: TableRow[];
+  column_mapping: ReturnType<typeof buildColumnMappingSummary>;
+  /** Set when source is XLSX (first sheet name). */
+  sheet_name?: string;
 };
 
-export function parseCsvToRows(csvText: string): CsvRow[] {
+export function parseCsvToTable(csvText: string): ParsedTable {
   const trimmed = csvText.replace(/^\uFEFF/, "").trim();
-  if (!trimmed) return [];
+  if (!trimmed) {
+    return { rows: [], column_mapping: { fields: [] } };
+  }
   const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length === 0) return [];
+  if (lines.length === 0) {
+    return { rows: [], column_mapping: { fields: [] } };
+  }
 
-  const rawHeaders = splitCsvLine(lines[0]);
-  const headers = rawHeaders.map((h) => ALIASES[normalizeHeader(h)] ?? normalizeHeader(h));
+  const rawHeaders = splitCsvLine(lines[0]).map((h) => h.trim());
+  const column_mapping = buildColumnMappingSummary(rawHeaders);
 
-  const rows: CsvRow[] = [];
+  const rows: TableRow[] = [];
   for (const line of lines.slice(1)) {
     const cols = splitCsvLine(line);
-    const row: CsvRow = {};
-    for (let i = 0; i < headers.length; i++) {
-      const key = headers[i];
-      row[key] = (cols[i] ?? "").trim();
-    }
-    rows.push(row);
+    rows.push(rowFromValues(rawHeaders, cols));
   }
-  return rows;
+  return { rows, column_mapping };
 }
 
+/** @deprecated Use parseCsvToTable for mapping metadata; kept for scripts/tests. */
+export function parseCsvToRows(csvText: string): Record<string, string>[] {
+  return parseCsvToTable(csvText).rows.map((r) => r.canonical);
+}

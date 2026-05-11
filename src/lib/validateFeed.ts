@@ -1,4 +1,5 @@
 import type { FeedLayerProduct } from "@/types/product";
+import { anchoredCategorySuggestion } from "@/lib/categorySuggestions";
 
 function isMissing(v?: string | null): boolean {
   return !v || v.trim().length === 0;
@@ -20,11 +21,19 @@ function isBroadCategory(cat?: string): boolean {
   return ["home", "accessories", "fitness", "kitchen", "lighting"].includes(c) || c.length <= 3;
 }
 
+function isAvailabilityMissing(v?: string | null): boolean {
+  if (isMissing(v)) return true;
+  return v === "unknown";
+}
+
 export type ValidationRollup = {
   missing_fields_total: number;
   variant_issues_total: number;
   weak_descriptions_total: number;
-  missing_policies_total: number;
+  /** Sum over products of missing trust slots (shipping / return / FAQ). */
+  missing_policy_slots: number;
+  /** Products missing at least one policy URL. */
+  missing_policy_products: number;
 };
 
 export function validateProducts(
@@ -33,7 +42,8 @@ export function validateProducts(
   let missing_fields_total = 0;
   let variant_issues_total = 0;
   let weak_descriptions_total = 0;
-  let missing_policies_total = 0;
+  let missing_policy_slots = 0;
+  let missing_policy_products = 0;
 
   const out: FeedLayerProduct[] = products.map((p) => {
     const missing_fields: string[] = [];
@@ -55,7 +65,8 @@ export function validateProducts(
 
     if (isBroadCategory(p.category)) {
       warnings.push("category is too broad");
-      suggestions.push("Use a more specific category (e.g. 'Drinkware / Insulated Bottles').");
+      const catS = anchoredCategorySuggestion(p.category, p.title, p.description);
+      if (catS) suggestions.push(catS);
     }
 
     const attr = p.attributes ?? {};
@@ -76,7 +87,12 @@ export function validateProducts(
         if (isMissing(v.title)) missing_fields.push(`variants[${i}].title`);
         if (!v.price || !Number.isFinite(v.price.amount)) missing_fields.push(`variants[${i}].price.amount`);
         if (!v.price || isMissing(v.price.currency)) missing_fields.push(`variants[${i}].price.currency`);
-        if (isMissing(v.availability)) missing_fields.push(`variants[${i}].availability`);
+        if (isAvailabilityMissing(v.availability)) {
+          missing_fields.push(`variants[${i}].availability`);
+          if (v.availability === "unknown") {
+            warnings.push(`variants[${i}].availability not recognized from source`);
+          }
+        }
       }
 
       const hasMultiple = p.variants.length > 1;
@@ -114,19 +130,24 @@ export function validateProducts(
       }
     }
 
-    // Trust context checks (not feed validity, but impacts readiness)
+    // Trust context — count each missing slot explicitly
+    let productPolicyMissing = 0;
     if (p.trust_context.shipping_policy === "missing") {
-      missing_policies_total += 1;
-      suggestions.push("Add a shipping policy link or text (trust context).");
+      productPolicyMissing += 1;
+      missing_policy_slots += 1;
+      suggestions.push("Add a shipping policy link (trust context).");
     }
     if (p.trust_context.return_policy === "missing") {
-      missing_policies_total += 1;
-      suggestions.push("Add a return policy link or text (trust context).");
+      productPolicyMissing += 1;
+      missing_policy_slots += 1;
+      suggestions.push("Add a return policy link (trust context).");
     }
     if (p.trust_context.faq === "missing") {
-      missing_policies_total += 1;
+      productPolicyMissing += 1;
+      missing_policy_slots += 1;
       suggestions.push("Add an FAQ page link or common questions (trust context).");
     }
+    if (productPolicyMissing > 0) missing_policy_products += 1;
 
     // AI-agent readiness fields
     if (!p.buyer_intent || p.buyer_intent.length === 0) {
@@ -140,7 +161,6 @@ export function validateProducts(
 
     missing_fields_total += missing_fields.length;
 
-    // De-duplicate suggestions but keep order
     const seen = new Set<string>();
     const uniqSuggestions = suggestions.filter((s) => {
       const k = s.toLowerCase();
@@ -162,7 +182,12 @@ export function validateProducts(
 
   return {
     products: out,
-    rollup: { missing_fields_total, variant_issues_total, weak_descriptions_total, missing_policies_total },
+    rollup: {
+      missing_fields_total,
+      variant_issues_total,
+      weak_descriptions_total,
+      missing_policy_slots,
+      missing_policy_products,
+    },
   };
 }
-

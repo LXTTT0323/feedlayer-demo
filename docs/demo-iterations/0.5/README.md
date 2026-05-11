@@ -4,6 +4,8 @@
 **Stack:** Next.js 16, React 19, Tailwind 4, TypeScript.  
 **Remote:** [github.com/LXTTT0323/feedlayer-demo](https://github.com/LXTTT0323/feedlayer-demo)
 
+> **Note:** The live app in this repository has moved to **Product 1.0** (see [`../1.0/README.md`](../1.0/README.md)). This page documents the 0.5 snapshot for comparison.
+
 ## What this iteration proves
 
 - **Input:** CSV (`.csv` only); pasted product listing text; built-in sample catalog / sample text.

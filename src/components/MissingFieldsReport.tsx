@@ -1,10 +1,10 @@
-import type { FeedLayerProduct } from "@/types/product";
+import type { ReadinessReportProduct } from "@/types/report";
 
-export function MissingFieldsReport({ products }: { products: FeedLayerProduct[] }) {
+export function MissingFieldsReport({ products }: { products: ReadinessReportProduct[] }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="text-sm font-semibold text-slate-900">Missing-field report</div>
-      <div className="mt-1 text-sm text-slate-600">Per product, what’s missing or weak.</div>
+      <div className="mt-1 text-sm text-slate-600">Per product, what’s missing or weak (readiness layer only).</div>
 
       <div className="mt-5 space-y-5">
         {products.map((p) => (
@@ -23,7 +23,7 @@ export function MissingFieldsReport({ products }: { products: FeedLayerProduct[]
                   {p.readiness.missing_fields.length === 0 ? (
                     <li className="text-slate-500">None</li>
                   ) : (
-                    p.readiness.missing_fields.slice(0, 12).map((f) => (
+                    p.readiness.missing_fields.slice(0, 14).map((f) => (
                       <li key={f} className="font-mono text-xs">
                         {f}
                       </li>
@@ -58,4 +58,3 @@ export function MissingFieldsReport({ products }: { products: FeedLayerProduct[]
     </div>
   );
 }
-

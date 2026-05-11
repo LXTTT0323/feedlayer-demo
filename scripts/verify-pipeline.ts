@@ -1,25 +1,21 @@
 /**
- * Runs the same pipeline as POST /api/process (no HTTP) to guard regressions.
+ * Runs the catalog pipeline (same as POST /api/process logic).
  * Usage: npm run verify
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseCsvToRows } from "../src/lib/parseCsv";
-import { extractFromCsvRows, extractFromListingText } from "../src/lib/extractProductData";
-import { normalizeProducts } from "../src/lib/normalizeProductData";
-import { validateProducts } from "../src/lib/validateFeed";
-import { scoreProducts, scoreStatus } from "../src/lib/scoreReadiness";
-import { SAMPLE_CSV, SAMPLE_TEXT } from "../src/lib/sampleData";
+import { runCatalogPipeline, runRulesOnlyFromCsvRows } from "../src/lib/processPipeline";
+import { parseCsvToTable } from "../src/lib/parseCsv";
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
 }
 
-function runCase(name: string, fn: () => void): void {
+async function runCase(name: string, fn: () => Promise<void>) {
   try {
-    fn();
+    await fn();
     console.log(`OK  ${name}`);
   } catch (e) {
     console.error(`FAIL ${name}:`, e instanceof Error ? e.message : e);
@@ -27,81 +23,70 @@ function runCase(name: string, fn: () => void): void {
   }
 }
 
-function pipeline(csvText?: string, text?: string, sample?: "catalog" | "text") {
-  let products;
-  if (csvText !== undefined) {
-    const rows = parseCsvToRows(csvText);
-    assert(rows.length > 0, "csv has no rows");
-    products = extractFromCsvRows(rows);
-  } else if (text !== undefined) {
-    products = extractFromListingText(text);
-  } else if (sample === "text") {
-    products = extractFromListingText(SAMPLE_TEXT);
-  } else {
-    products = extractFromCsvRows(parseCsvToRows(SAMPLE_CSV));
-  }
-  const normalized = normalizeProducts(products);
-  const validated = validateProducts(normalized);
-  const scored = scoreProducts(validated.products);
-  return { scored, rollup: validated.rollup, status: scoreStatus(scored.overallScore) };
-}
+async function main() {
+  await runCase("Sample catalog: 5 products, v1 report shape", async () => {
+    const r = await runCatalogPipeline({ kind: "sample_catalog" });
+    assert(r.version === "1.0", "version");
+    assert(r.ai_ready_feed.length === 5, "5 feed items");
+    assert(r.readiness_report.products.length === 5, "5 readiness rows");
+    assert(!("readiness" in (r.ai_ready_feed[0] as object)), "no readiness on feed item");
+    const v0 = r.ai_ready_feed[0]?.variants[0];
+    if (v0?.price) {
+      assert(typeof v0.price.amount_minor === "number", "minor units");
+    }
+    assert(r.summary.variants_detected >= 5, "variants rollup");
+  });
 
-const publicCsv = readFileSync(join(process.cwd(), "public", "test-feedlayer-sample.csv"), "utf8");
+  await runCase("Sample text: 1 product, Drinkware", async () => {
+    const r = await runCatalogPipeline({ kind: "sample_text" });
+    assert(r.ai_ready_feed.length === 1, "one product");
+    assert(r.ai_ready_feed[0]?.category === "Drinkware", "category");
+  });
 
-runCase("Sample catalog: 5 products, score 0–100", () => {
-  const { scored } = pipeline(undefined, undefined, "catalog");
-  assert(scored.products.length === 5, `expected 5 products, got ${scored.products.length}`);
-  assert(scored.overallScore >= 0 && scored.overallScore <= 100, "overall score range");
-  for (const p of scored.products) {
-    assert(p.readiness.score >= 0 && p.readiness.score <= 100, `product score range ${p.product_id}`);
-  }
-});
+  await runCase("Public test CSV file", async () => {
+    const csv = readFileSync(join(process.cwd(), "public", "test-feedlayer-sample.csv"), "utf8");
+    const r = await runCatalogPipeline({ kind: "csv_text", csvText: csv });
+    assert(r.ai_ready_feed.length === 5, "5 products");
+  });
 
-runCase("Sample text snippet: 1 product, Drinkware", () => {
-  const { scored } = pipeline(undefined, undefined, "text");
-  assert(scored.products.length === 1, "one product");
-  assert(scored.products[0]?.category === "Drinkware", "category from bottle keywords");
-});
+  await runCase("English paste pipeline", async () => {
+    const text =
+      "500ml stainless steel bottle, black, selling price $19.99, in stock.";
+    const r = await runCatalogPipeline({ kind: "text", text });
+    const v = r.ai_ready_feed[0]?.variants[0];
+    assert(v?.price?.currency === "USD" && v.price.amount_minor === 1999, "usd minor");
+    assert(v?.availability === "in_stock", "availability enum");
+  });
 
-runCase("Public test CSV matches sample row count", () => {
-  const { scored } = pipeline(publicCsv);
-  assert(scored.products.length === 5, "5 grouped products");
-});
+  await runCase("Chinese paste: CNY minor", async () => {
+    const text = "500毫升不锈钢保温杯，曜石黑，售价人民币89元，现货。";
+    const r = await runCatalogPipeline({ kind: "text", text });
+    const v = r.ai_ready_feed[0]?.variants[0];
+    assert(v?.price?.currency === "CNY" && v.price.amount_minor === 8900, "cny minor (fen)");
+  });
 
-runCase("English paste: price USD", () => {
-  const text =
-    "500ml stainless steel bottle, black, selling price $19.99, in stock.";
-  const { scored } = pipeline(undefined, text);
-  const v = scored.products[0]?.variants[0];
-  assert(v?.price?.currency === "USD" && v.price.amount === 19.99, "usd price");
-});
-
-runCase("Chinese paste: CNY + capacity", () => {
-  const text = "500毫升不锈钢保温杯，曜石黑，售价人民币89元，现货。";
-  const { scored } = pipeline(undefined, text);
-  const p = scored.products[0];
-  assert(p?.attributes.capacity?.includes("500"), "capacity");
-  assert(p?.variants[0]?.price?.currency === "CNY", "cny");
-  assert(p?.variants[0]?.price?.amount === 89, "amount 89");
-});
-
-runCase("Variant grouping: same product_id two rows => 2 variants", () => {
-  const csv = `product_id,sku,title,desc,price,currency,availability,category,image_url
+  await runCase("Variant grouping: two rows same product_id", async () => {
+    const csv = `product_id,sku,title,desc,price,currency,availability,category,image_url
 P-X,SKU-A,Widget,,10,USD,in stock,Cat,https://example.com/a.jpg
 P-X,SKU-B,Widget,,12,USD,out of stock,Cat,https://example.com/a.jpg`;
-  const { scored } = pipeline(csv);
-  assert(scored.products.length === 1, "one product");
-  assert(scored.products[0]?.variants.length === 2, "two variants");
-});
+    const r = await runCatalogPipeline({ kind: "csv_text", csvText: csv });
+    assert(r.ai_ready_feed.length === 1, "one product");
+    assert(r.summary.variants_detected === 2, "two variants");
+  });
 
-runCase("Empty rows: parseCsv returns []", () => {
-  const rows = parseCsvToRows("");
-  assert(rows.length === 0, "empty");
-});
+  await runCase("parseCsv empty", async () => {
+    const t = parseCsvToTable("");
+    assert(t.rows.length === 0, "empty");
+  });
 
-console.log("");
-if (process.exitCode === 1) {
-  console.error("verify-pipeline: FAILED");
-} else {
-  console.log("verify-pipeline: all checks passed");
+  await runCase("Legacy row-only extract still works", async () => {
+    const rows = runRulesOnlyFromCsvRows("product_id,title\nA,Hi");
+    assert(rows.length === 1 && rows[0]?.product_id === "A", "legacy");
+  });
+
+  console.log("");
+  if (process.exitCode === 1) console.error("verify-pipeline: FAILED");
+  else console.log("verify-pipeline: all checks passed");
 }
+
+main();

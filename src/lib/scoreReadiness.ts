@@ -31,7 +31,7 @@ function scoreProduct(p: FeedLayerProduct): number {
       if (isPresent(v.variant_id)) ok += 1;
       if (isPresent(v.title)) ok += 1;
       if (v.price && Number.isFinite(v.price.amount) && isPresent(v.price.currency)) ok += 1;
-      if (isPresent(v.availability)) ok += 1;
+      if (isPresent(v.availability) && v.availability !== "unknown") ok += 1;
       const needsOptions = variants.length > 1;
       const hasOptions = !!v.options?.color || !!v.options?.size;
       if (!needsOptions || hasOptions) ok += 1;

@@ -1,65 +1,56 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { FeedLayerResult } from "@/types/product";
+import type { FeedLayerFullReport } from "@/types/report";
 
-export function FeedPreview({ result }: { result: FeedLayerResult }) {
+type Tab = "ai_ready" | "readiness_slice";
+
+export function FeedPreview({ report }: { report: FeedLayerFullReport }) {
+  const [tab, setTab] = useState<Tab>("ai_ready");
   const [expanded, setExpanded] = useState(false);
-  const json = useMemo(() => JSON.stringify(result.products, null, 2), [result.products]);
-  const shown = expanded ? json : json.slice(0, 6000);
+  const json = useMemo(() => {
+    if (tab === "ai_ready") return JSON.stringify(report.ai_ready_feed, null, 2);
+    return JSON.stringify(report.readiness_report.products.map((p) => ({ product_id: p.product_id, readiness: p.readiness })), null, 2);
+  }, [report, tab]);
+  const shown = expanded ? json : json.slice(0, 8000);
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-slate-900">FeedLayer AI-Ready Feed (preview)</div>
-          <div className="mt-1 text-sm text-slate-600">Platform-agnostic JSON structure you can export.</div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={async () => {
-              await navigator.clipboard.writeText(json);
-            }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-          >
-            Copy JSON
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const blob = new Blob([json], { type: "application/json" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "feedlayer-ai-ready-feed.json";
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-            className="rounded-xl bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700"
-          >
-            Download JSON
-          </button>
-        </div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">
+        <span className="text-sm font-semibold text-slate-900">JSON preview</span>
+        <button
+          type="button"
+          onClick={() => setTab("ai_ready")}
+          className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "ai_ready" ? "bg-teal-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+        >
+          AI-ready feed
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("readiness_slice")}
+          className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "readiness_slice" ? "bg-teal-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+        >
+          Readiness (per product)
+        </button>
       </div>
-
-      <pre className="mt-5 max-h-[520px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-800">
+      <p className="mt-3 text-sm text-slate-600">
+        {tab === "ai_ready"
+          ? "Export-ready product objects. Prices include minor units; readiness is not embedded here."
+          : "Scores and issues only — full readiness JSON is available via export."}
+      </p>
+      <pre className="mt-4 max-h-[480px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-800">
         {shown}
         {!expanded && json.length > shown.length ? "\n\n… (truncated) …" : ""}
       </pre>
-
-      {json.length > 6000 ? (
-        <div className="mt-3">
-          <button
-            type="button"
-            className="text-sm font-semibold text-teal-700 hover:text-teal-800"
-            onClick={() => setExpanded((v) => !v)}
-          >
-            {expanded ? "Show less" : "Show full JSON"}
-          </button>
-        </div>
+      {json.length > 8000 ? (
+        <button
+          type="button"
+          className="mt-3 text-sm font-semibold text-teal-700 hover:text-teal-800"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Show less" : "Show full JSON"}
+        </button>
       ) : null}
     </div>
   );
 }
-

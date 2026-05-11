@@ -3,9 +3,9 @@
 import { useRef } from "react";
 
 export function UploadBox({
-  onCsvSelected,
+  onFileSelected,
 }: {
-  onCsvSelected: (file: File) => void;
+  onFileSelected: (file: File) => void;
 }) {
   const ref = useRef<HTMLInputElement | null>(null);
 
@@ -13,9 +13,10 @@ export function UploadBox({
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-sm font-semibold text-slate-900">Upload CSV</div>
+          <div className="text-sm font-semibold text-slate-900">Upload catalog file</div>
           <div className="mt-1 text-sm text-slate-600">
-            Upload a <span className="font-medium">.csv</span> export from a spreadsheet or marketplace listing.
+            <span className="font-medium">.csv</span> or <span className="font-medium">.xlsx</span> — first worksheet is used
+            for Excel (sheet picker later).
           </div>
         </div>
         <button
@@ -30,20 +31,20 @@ export function UploadBox({
       <input
         ref={ref}
         type="file"
-        accept=".csv,text/csv"
+        accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) onCsvSelected(f);
+          if (f) onFileSelected(f);
           if (ref.current) ref.current.value = "";
         }}
       />
 
       <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
-        Columns can be messy — we’ll try to map common aliases (e.g. <span className="font-mono">desc → description</span>,{" "}
-        <span className="font-mono">img → image_url</span>, <span className="font-mono">stock → availability</span>).
+        Headers can be messy — we map common aliases (e.g. <span className="font-mono">desc → description</span>,{" "}
+        <span className="font-mono">img → image_url</span>, <span className="font-mono">stock → availability</span>). See the
+        mapping summary on the results page.
       </div>
     </div>
   );
 }
-

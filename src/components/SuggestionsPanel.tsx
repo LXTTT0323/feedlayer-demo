@@ -1,4 +1,4 @@
-import type { FeedLayerProduct } from "@/types/product";
+import type { ReadinessReportProduct } from "@/types/report";
 
 function unique(items: string[]): string[] {
   const seen = new Set<string>();
@@ -12,7 +12,7 @@ function unique(items: string[]): string[] {
   return out;
 }
 
-export function SuggestionsPanel({ products }: { products: FeedLayerProduct[] }) {
+export function SuggestionsPanel({ products }: { products: ReadinessReportProduct[] }) {
   const variantSuggestions = unique(
     products
       .flatMap((p) => p.readiness.suggestions)
@@ -22,13 +22,13 @@ export function SuggestionsPanel({ products }: { products: FeedLayerProduct[] })
   const attributeSuggestions = unique(
     products
       .flatMap((p) => p.readiness.suggestions)
-      .filter((s) => /material|capacity|attributes|category/i.test(s)),
+      .filter((s) => /material|capacity|attributes|category|policy/i.test(s)),
   );
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="text-sm font-semibold text-slate-900">Cleanup suggestions</div>
-      <div className="mt-1 text-sm text-slate-600">Quick actions to improve data quality.</div>
+      <div className="mt-1 text-sm text-slate-600">Derived from validation (and optional LLM when configured).</div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 p-4">
@@ -37,18 +37,18 @@ export function SuggestionsPanel({ products }: { products: FeedLayerProduct[] })
             {variantSuggestions.length === 0 ? (
               <li className="text-slate-500">No variant issues detected.</li>
             ) : (
-              variantSuggestions.slice(0, 8).map((s) => <li key={s}>{s}</li>)
+              variantSuggestions.slice(0, 10).map((s) => <li key={s}>{s}</li>)
             )}
           </ul>
         </div>
 
         <div className="rounded-xl border border-slate-200 p-4">
-          <div className="text-xs font-semibold text-slate-700">Attribute normalization</div>
+          <div className="text-xs font-semibold text-slate-700">Attribute & policy</div>
           <ul className="mt-2 space-y-1 text-sm text-slate-700">
             {attributeSuggestions.length === 0 ? (
-              <li className="text-slate-500">No major attribute gaps detected.</li>
+              <li className="text-slate-500">No major gaps surfaced in grouped suggestions.</li>
             ) : (
-              attributeSuggestions.slice(0, 8).map((s) => <li key={s}>{s}</li>)
+              attributeSuggestions.slice(0, 10).map((s) => <li key={s}>{s}</li>)
             )}
           </ul>
         </div>
@@ -56,4 +56,3 @@ export function SuggestionsPanel({ products }: { products: FeedLayerProduct[] })
     </div>
   );
 }
-

@@ -1,4 +1,4 @@
-import type { FeedLayerResult } from "@/types/product";
+import type { FeedLayerFullReport } from "@/types/report";
 
 function Card({ label, value }: { label: string; value: string | number }) {
   return (
@@ -9,15 +9,18 @@ function Card({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function SummaryCards({ result }: { result: FeedLayerResult }) {
+export function SummaryCards({ report }: { report: FeedLayerFullReport }) {
+  const s = report.summary;
   return (
-    <div className="grid gap-4 md:grid-cols-5">
-      <Card label="Products processed" value={result.summary.products_processed} />
-      <Card label="Missing fields" value={result.summary.missing_fields_total} />
-      <Card label="Variant issues" value={result.summary.variant_issues_total} />
-      <Card label="Weak descriptions" value={result.summary.weak_descriptions_total} />
-      <Card label="Missing policies" value={result.summary.missing_policies_total} />
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Card label="Products processed" value={s.products_processed} />
+      <Card label="Variants detected" value={s.variants_detected} />
+      <Card label="Missing fields (total checks)" value={s.missing_fields_count} />
+      <Card label="Weak descriptions" value={s.weak_descriptions_count} />
+      <Card label="Missing policy slots (sum)" value={s.missing_policies_count} />
+      <Card label="Products with policy gaps" value={s.missing_policy_products} />
+      <Card label="Variant issues (rollup)" value={s.variant_issues_count} />
+      <Card label="Overall score" value={`${report.overall.score}/100`} />
     </div>
   );
 }
-

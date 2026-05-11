@@ -54,23 +54,3 @@ export type FeedLayerProduct = {
   readiness: ProductReadiness;
 };
 
-export type FeedLayerResult = {
-  processed_at: string;
-  input: {
-    type: "csv" | "text" | "sample";
-    product_count: number;
-  };
-  summary: {
-    products_processed: number;
-    missing_fields_total: number;
-    variant_issues_total: number;
-    weak_descriptions_total: number;
-    missing_policies_total: number;
-  };
-  overall: {
-    score: number;
-    status: "Strong" | "Needs improvement" | "Weak" | "Not ready";
-  };
-  products: FeedLayerProduct[];
-};
-
