@@ -197,9 +197,11 @@ export default function HomeClient() {
           )}
 
           <footer className="pt-2 text-xs text-slate-500">
-            Optional OpenAI: <span className="font-mono">OPENAI_API_KEY</span> on the server. Model:{" "}
-            <span className="font-mono">FEEDLAYER_OPENAI_MODEL</span> (default <span className="font-mono">gpt-5.5</span>). Disable
-            with <span className="font-mono">FEEDLAYER_LLM_ENABLED=false</span> or <span className="font-mono">FEEDLAYER_LLM_MAX_PRODUCTS=0</span>.
+            Optional LLM: primary <span className="font-mono">GEMINI_API_KEY</span> /{" "}
+            <span className="font-mono">GOOGLE_GENERATIVE_AI_API_KEY</span> (Gemini 2.5 Pro,{" "}
+            <span className="font-mono">FEEDLAYER_GEMINI_MODEL</span>); fallback{" "}
+            <span className="font-mono">OPENAI_API_KEY</span> (<span className="font-mono">FEEDLAYER_OPENAI_MODEL</span>, default{" "}
+            <span className="font-mono">gpt-5.5</span>). Rules-only if disabled or keys missing.
           </footer>
         </div>
       </div>

@@ -28,7 +28,9 @@ export function SuggestionsPanel({ products }: { products: ReadinessReportProduc
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="text-sm font-semibold text-slate-900">Cleanup suggestions</div>
-      <div className="mt-1 text-sm text-slate-600">Derived from validation (and optional OpenAI enrichment when configured).</div>
+      <div className="mt-1 text-sm text-slate-600">
+        Derived from validation (and optional Gemini → OpenAI enrichment when API keys are configured).
+      </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 p-4">

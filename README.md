@@ -15,7 +15,9 @@ Pilot-ready **catalog audit** demo: upload **CSV** or **Excel (.xlsx, first shee
 
 ## Optional LLM (server env)
 
-Official **OpenAI** only: set **`OPENAI_API_KEY`**. Optional **`FEEDLAYER_OPENAI_MODEL`** (default **`gpt-5.5`** in code — override to your account’s model id). Rules-only if the key is missing or LLM is disabled. See [`docs/demo-iterations/1.0/README.md`](docs/demo-iterations/1.0/README.md).
+**Primary:** **`GOOGLE_GENERATIVE_AI_API_KEY`** or **`GEMINI_API_KEY`** → Gemini **2.5 Pro** (default model id `gemini-2.5-pro`, override with `FEEDLAYER_GEMINI_MODEL`).  
+**Fallback / validator:** **`OPENAI_API_KEY`** → **`gpt-5.5`** by default (`FEEDLAYER_OPENAI_MODEL`).  
+If both fail or keys are missing → **rules only**. See [`docs/demo-iterations/1.0/README.md`](docs/demo-iterations/1.0/README.md).
 
 ## Scripts
 
@@ -34,4 +36,4 @@ npm run verify
 
 ## Stack
 
-Next.js (App Router), React, Tailwind CSS, TypeScript, SheetJS (`xlsx`), optional OpenAI (`openai` package).
+Next.js (App Router), React, Tailwind CSS, TypeScript, SheetJS (`xlsx`), optional Gemini (REST) + OpenAI (`openai` package).
