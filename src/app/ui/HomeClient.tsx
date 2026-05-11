@@ -101,7 +101,7 @@ export default function HomeClient() {
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="text-sm font-semibold text-slate-900">What’s happening</div>
                 <div className="mt-2 text-sm text-slate-600">
-                  Reading rows, mapping headers, optional LLM enrichment, validating, scoring, and building separated exports
+                  Reading rows, mapping headers, optional OpenAI enrichment, validating, scoring, and building separated exports
                   (AI-ready feed vs readiness report).
                 </div>
                 <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
@@ -117,8 +117,8 @@ export default function HomeClient() {
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="text-sm font-semibold text-slate-900">Paste product listing text</div>
                   <div className="mt-1 text-sm text-slate-600">
-                    Paste unstructured text and we’ll extract a structured product record (rules first; optional LLM when
-                    configured).
+                    Paste unstructured text and we’ll extract a structured product record (rules first; optional OpenAI when
+                    `OPENAI_API_KEY` is set).
                   </div>
                   <textarea
                     value={pasteText}
@@ -197,9 +197,9 @@ export default function HomeClient() {
           )}
 
           <footer className="pt-2 text-xs text-slate-500">
-            Optional LLM: <span className="font-mono">OPENAI_API_KEY</span> or <span className="font-mono">OPENROUTER_API_KEY</span> (OpenAI-compatible),{" "}
-            <span className="font-mono">ANTHROPIC_API_KEY</span>, or <span className="font-mono">GOOGLE_GENERATIVE_AI_API_KEY</span>.{" "}
-            <span className="font-mono">FEEDLAYER_LLM_PROVIDER=auto|openai|openrouter|anthropic|google</span>
+            Optional OpenAI: <span className="font-mono">OPENAI_API_KEY</span> on the server. Model:{" "}
+            <span className="font-mono">FEEDLAYER_OPENAI_MODEL</span> (default <span className="font-mono">gpt-5.5</span>). Disable
+            with <span className="font-mono">FEEDLAYER_LLM_ENABLED=false</span> or <span className="font-mono">FEEDLAYER_LLM_MAX_PRODUCTS=0</span>.
           </footer>
         </div>
       </div>

@@ -16,25 +16,9 @@ const ResponseSchema = z.object({
   products: z.array(PatchSchema),
 });
 
-export type LlmProvider = "openai" | "anthropic" | "google";
-
-/** OpenAI official API or any OpenAI-compatible gateway (e.g. OpenRouter). */
-function openAiCompatibleConfigured(): boolean {
-  return !!(process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY);
-}
-
-function pickProvider(): LlmProvider | null {
-  const forced = process.env.FEEDLAYER_LLM_PROVIDER?.toLowerCase();
-  if ((forced === "openai" || forced === "openrouter") && openAiCompatibleConfigured()) return "openai";
-  if (forced === "anthropic" && process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (forced === "google" && (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY))
-    return "google";
-  if (forced && forced !== "auto") return null;
-
-  if (openAiCompatibleConfigured()) return "openai";
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY) return "google";
-  return null;
+function llmDisabled(): boolean {
+  if (process.env.FEEDLAYER_LLM_ENABLED === "0" || process.env.FEEDLAYER_LLM_ENABLED === "false") return true;
+  return false;
 }
 
 function maxProducts(): number {
@@ -42,6 +26,11 @@ function maxProducts(): number {
   if (raw === "0") return 0;
   const n = raw ? Number(raw) : 100;
   return Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 100;
+}
+
+/** OpenAI model for catalog enrichment / optional validation pass (same API). Override when your org pins a stable id. */
+function openAiModel(): string {
+  return (process.env.FEEDLAYER_OPENAI_MODEL || "gpt-5.5").trim();
 }
 
 function buildPromptPayload(products: DraftProduct[]): unknown[] {
@@ -66,26 +55,18 @@ Rules:
 - Keep category aligned with the product's existing category string when present; you may append a more specific sub-segment using " / ".
 `;
 
-async function callOpenAi(body: string): Promise<string> {
+/**
+ * Single OpenAI Chat Completions call (official API only).
+ * If the API rejects json_object or the model id, the caller catches and falls back to rules.
+ */
+async function callOpenAiChatJson(body: string): Promise<string> {
   const OpenAI = (await import("openai")).default;
-  const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("Missing OpenAI-compatible API key");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("Missing OPENAI_API_KEY");
 
-  const baseURL =
-    process.env.FEEDLAYER_OPENAI_BASE_URL ||
-    process.env.OPENAI_BASE_URL ||
-    (process.env.OPENROUTER_API_KEY ? "https://openrouter.ai/api/v1" : undefined);
+  const client = new OpenAI({ apiKey });
+  const model = openAiModel();
 
-  const defaultHeaders: Record<string, string> = {};
-  if (process.env.OPENROUTER_HTTP_REFERER) defaultHeaders["HTTP-Referer"] = process.env.OPENROUTER_HTTP_REFERER;
-  if (process.env.OPENROUTER_APP_TITLE) defaultHeaders["X-Title"] = process.env.OPENROUTER_APP_TITLE;
-
-  const client = new OpenAI({
-    apiKey,
-    baseURL,
-    defaultHeaders: Object.keys(defaultHeaders).length ? defaultHeaders : undefined,
-  });
-  const model = process.env.FEEDLAYER_OPENAI_MODEL || "gpt-4o-mini";
   const res = await client.chat.completions.create({
     model,
     temperature: 0.1,
@@ -95,51 +76,9 @@ async function callOpenAi(body: string): Promise<string> {
       { role: "user", content: body },
     ],
   });
+
   const text = res.choices[0]?.message?.content ?? "";
   if (!text) throw new Error("Empty OpenAI response");
-  return text;
-}
-
-async function callAnthropic(body: string): Promise<string> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-  const model = process.env.FEEDLAYER_ANTHROPIC_MODEL || "claude-3-5-haiku-latest";
-  const res = await client.messages.create({
-    model,
-    max_tokens: 4096,
-    temperature: 0.1,
-    messages: [{ role: "user", content: `${SYSTEM}\n\nINPUT:\n${body}` }],
-  });
-  const block = res.content.find((b) => b.type === "text");
-  if (!block || block.type !== "text") throw new Error("Empty Anthropic response");
-  return block.text;
-}
-
-async function callGoogle(body: string): Promise<string> {
-  const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("Missing Google API key");
-  const model = process.env.FEEDLAYER_GOOGLE_MODEL || "gemini-2.0-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: `${SYSTEM}\n\nINPUT:\n${body}` }] }],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: "application/json",
-      },
-    }),
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Gemini HTTP ${res.status}: ${t.slice(0, 500)}`);
-  }
-  const json = (await res.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
-  const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ?? "";
-  if (!text) throw new Error("Empty Gemini response");
   return text;
 }
 
@@ -163,18 +102,21 @@ function mergePatch(base: DraftProduct, patch: z.infer<typeof PatchSchema>): Dra
 }
 
 /**
- * Optional LLM enrichment after rules, before validation. On failure, returns drafts unchanged.
+ * Optional OpenAI enrichment after rule-based extraction, before validation.
+ *
+ * - **No `OPENAI_API_KEY`**, `FEEDLAYER_LLM_ENABLED=false`, or `FEEDLAYER_LLM_MAX_PRODUCTS=0` → returns drafts unchanged (rules only).
+ * - On HTTP/model/JSON errors or schema validation failure → returns drafts unchanged (rules as fallback).
+ *
+ * Model: **`FEEDLAYER_OPENAI_MODEL`** (default **`gpt-5.5`**). Set when your account exposes a stable model id.
  */
 export async function enrichDraftProductsWithOptionalLlm(products: DraftProduct[]): Promise<DraftProduct[]> {
-  const provider = pickProvider();
-  if (!provider || maxProducts() === 0) return products;
+  if (llmDisabled() || maxProducts() === 0 || !process.env.OPENAI_API_KEY) {
+    return products;
+  }
 
   try {
     const payload = JSON.stringify({ products: buildPromptPayload(products) }, null, 0);
-    let raw: string;
-    if (provider === "openai") raw = await callOpenAi(payload);
-    else if (provider === "anthropic") raw = await callAnthropic(payload);
-    else raw = await callGoogle(payload);
+    const raw = await callOpenAiChatJson(payload);
 
     const parsed = ResponseSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) return products;

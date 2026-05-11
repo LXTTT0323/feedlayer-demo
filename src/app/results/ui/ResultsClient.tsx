@@ -106,8 +106,8 @@ export default function ResultsClient() {
               <div className="mt-2 text-sm leading-6 text-slate-600">
                 This dashboard separates the <span className="font-semibold text-slate-900">AI-ready feed</span> from the{" "}
                 <span className="font-semibold text-slate-900">readiness report</span>. Policy gaps are counted as individual
-                missing slots across shipping, returns, and FAQ. Optional LLM enrichment runs only when API keys are configured
-                server-side.
+                missing slots across shipping, returns, and FAQ. Optional OpenAI enrichment runs only when{" "}
+                <span className="font-mono">OPENAI_API_KEY</span> is set server-side; otherwise the run is rules-only.
               </div>
             </div>
           </div>

@@ -14,50 +14,39 @@
 | Validation | Basic | **Minor-unit prices**, **machine availability enum**, **category-aligned suggestions**, **explicit policy gap counting** |
 | UX | Results cards + lists | **Report dashboard**: KPIs, **product table**, **product detail** (original → normalized → issues) |
 | Export | One JSON | **Three downloads** + **OpenAI-style preview** (not official integration) |
-| Intelligence | Rules only | **Optional LLM** when API key present; **rules fallback** always available |
+| Intelligence | Rules only | **Rule-based pipeline always**; **optional OpenAI** enrichment when `OPENAI_API_KEY` is set (same JSON schema + Zod validation; failures → rules) |
 
 ## Out of scope (unchanged)
 
 - No auth, payments, Shopify/Amazon/TikTok, official OpenAI upload, product graph DB.
 
-## LLM provider strategy (decision)
+## LLM strategy (current)
 
-**Recommendation: switchable providers with safe defaults — do not hard-lock to Gemini 2.5 Pro only.**
+**Single path: official OpenAI Chat Completions only.** No OpenRouter, Anthropic, or Gemini in this repo.
 
-Reasons:
-
-1. **Pilot reliability:** sellers care about stable JSON + your validation layer, not a specific model badge. Different orgs already have OpenAI vs Anthropic vs Google contracts.
-2. **Latency / quotas:** Gemini 2.5 Pro can be strong on long catalogs but varies by region and quota; OpenAI/Anthropic mini/flash tiers are often enough for **structured JSON patch** tasks.
-3. **Operational simplicity:** one codebase path (`FEEDLAYER_LLM_PROVIDER`) avoids “we only support Gemini” objections during pilots.
+1. **Rule-based parser / extractors** run first (`parseCsv`, `parseExcel`, `extractProductData`, `normalizeProductData`).
+2. **Optional OpenAI pass** (`src/lib/llm/enrichCatalog.ts`): same structured JSON contract; merged only after **JSON parse + Zod**; any error → **unchanged drafts** (rules remain the source of truth).
+3. **Default model id:** `FEEDLAYER_OPENAI_MODEL` defaults to **`gpt-5.5`** (placeholder for your org’s stable id when available). Override in env if the API uses a different slug.
+4. **Disable LLM:** omit `OPENAI_API_KEY`, or set `FEEDLAYER_LLM_ENABLED=false`, or `FEEDLAYER_LLM_MAX_PRODUCTS=0`.
 
 ### Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `FEEDLAYER_LLM_PROVIDER` | `auto` (default) \| `openai` \| `openrouter` \| `anthropic` \| `google` |
-| `OPENAI_API_KEY` | Official OpenAI API key (chat completions). |
-| `OPENROUTER_API_KEY` | [OpenRouter](https://openrouter.ai/) key: uses the **same OpenAI SDK path** with `baseURL` `https://openrouter.ai/api/v1` unless overridden. |
-| `FEEDLAYER_OPENAI_BASE_URL` or `OPENAI_BASE_URL` | Custom OpenAI-compatible API base (e.g. other proxies). If only `OPENROUTER_API_KEY` is set, base URL defaults to OpenRouter. |
-| `OPENROUTER_HTTP_REFERER` / `OPENROUTER_APP_TITLE` | Optional headers OpenRouter recommends for rankings. |
-| `ANTHROPIC_API_KEY` | If set, Anthropic is used. |
-| `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` | If set, Google Generative Language API (Gemini) is used. |
-| `FEEDLAYER_OPENAI_MODEL` | Default: `gpt-4o-mini`. On OpenRouter use slugs like `openai/gpt-4o-mini` or `google/gemini-2.0-flash-001`. |
-| `FEEDLAYER_ANTHROPIC_MODEL` | Default: `claude-3-5-haiku-latest` (cheap JSON); override to Sonnet for harder catalogs. |
-| `FEEDLAYER_GOOGLE_MODEL` | Default: `gemini-2.0-flash` or org-approved **Gemini 2.5 Pro** id when you standardize it (e.g. preview IDs change — keep in env, not code). |
-
-**`auto` order:** OpenAI-compatible (`OPENAI_API_KEY` or `OPENROUTER_API_KEY`) → Anthropic → Google native. Override with `FEEDLAYER_LLM_PROVIDER=google` to force Gemini when several keys exist.
-
-**OpenRouter vs native keys:** Use **OpenRouter** if you want one bill and fast model switching via `FEEDLAYER_OPENAI_MODEL` only. Use **native keys** if you need guaranteed routing, org VPC, or features some gateways do not pass through (e.g. certain JSON modes). This app only needs **chat completions + JSON body**; both work.
+| `OPENAI_API_KEY` | Required for any LLM enrichment (official OpenAI). |
+| `FEEDLAYER_OPENAI_MODEL` | Default: **`gpt-5.5`**. Set to the model id your account supports. |
+| `FEEDLAYER_LLM_MAX_PRODUCTS` | Max products sent in one LLM payload (default `100`, max `200`). Set `0` to skip LLM even if key is set. |
+| `FEEDLAYER_LLM_ENABLED` | Set `false` or `0` to force rules-only. |
 
 ### LLM behavior constraints
 
-- Prompt returns **structured JSON only** (no markdown).
-- Server **parses + validates** with the same schemas as rule output; invalid LLM output is **discarded** and the run **falls back** to rules for that batch.
-- LLM is used for **enrichment / suggestions / light normalization** grounded in existing row text — **no inventing** unavailable facts (enforced in prompt + post-check: filled fields must be traceable to input strings or safe merges like joining existing cells).
+- Prompt returns **structured JSON only** (chat `response_format: json_object` when the model supports it).
+- **Zod validation** on the server; invalid output is **discarded** → rules-only merge for that run.
+- No invented facts beyond prompt rules + existing `mergePatch` guards.
 
 ### Catalog size
 
-- Target **≥ 100 products** per run without UI lock: parsing/scoring stays O(n); LLM calls are **chunked** (e.g. batches of rows) with a configurable cap `FEEDLAYER_LLM_MAX_PRODUCTS` (default `100`, set `0` to disable LLM entirely even if key exists).
+- **≥ 100 products** per run: parsing/scoring is O(n). LLM sends up to `FEEDLAYER_LLM_MAX_PRODUCTS` rows in one request (batching multiple requests can be added later).
 
 ## Data model (1.0 response)
 
@@ -82,12 +71,10 @@ npm run build
 npm run verify
 ```
 
-Extend `scripts/verify-pipeline.ts` for: xlsx round-trip (optional fixture), new summary fields, feed without readiness, availability enum.
-
 ## Changelog
 
-- **2026-05-10 (b):** OpenRouter supported via `OPENROUTER_API_KEY` + default `https://openrouter.ai/api/v1`, optional `FEEDLAYER_OPENAI_BASE_URL` / OpenRouter headers; `FEEDLAYER_LLM_PROVIDER=openrouter` alias.
-- **2026-05-10:** Shipped 1.0 pilot: `.xlsx` (first sheet), expanded column mapping + UI summary, split `ai_ready_feed` / `readiness_report` / `summary`, minor-unit prices + machine availability enums, anchored category suggestions, policy slot counts, report dashboard (KPIs, table, row detail drawer), OpenAI-style preview (disclaimed), three JSON downloads, optional LLM (`openai` | `anthropic` | `google`) via env with rules fallback (`src/lib/processPipeline.ts`, `src/lib/llm/enrichCatalog.ts`).
+- **2026-05-10 (c):** LLM stack simplified to **OpenAI only** (no OpenRouter / Anthropic / Gemini). Default `FEEDLAYER_OPENAI_MODEL=gpt-5.5`; rules-only fallback unchanged.
+- **2026-05-10:** Shipped 1.0 pilot: `.xlsx` (first sheet), column mapping UI, split `ai_ready_feed` / `readiness_report` / `summary`, minor-unit prices, availability enums, anchored category suggestions, policy counts, report dashboard, OpenAI-style preview (disclaimed), three JSON downloads (`src/lib/processPipeline.ts`, `src/lib/llm/enrichCatalog.ts`).
 
 ## Key code paths
 
