@@ -112,7 +112,6 @@ async function callOpenAiValidatorJson(userBody: string): Promise<string> {
 
   const res = await client.chat.completions.create({
     model,
-    temperature: 0.1,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: OPENAI_VALIDATOR_SYSTEM },
