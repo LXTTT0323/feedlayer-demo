@@ -1,87 +1,75 @@
 # FeedLayer Product 1.0 — pilot-ready catalog audit
 
-**Status:** implemented in `feedlayer-demo` (pilot-ready iteration).  
-**Base:** Product 0.5 codebase (`feedlayer-demo`).  
+**Status:** **1.0 complete** — 100-SKU verified, multi-sheet Excel, LLM batching, deploy docs.  
 **Remote:** [github.com/LXTTT0323/feedlayer-demo](https://github.com/LXTTT0323/feedlayer-demo)
 
 ## Goals (vs 0.5)
 
 | Area | 0.5 | 1.0 |
 |------|-----|-----|
-| Input | CSV + paste + sample | **+ `.xlsx`** (first sheet default; code structured for future sheet picker) |
-| Column handling | Fixed alias table in parser | **Central mapping** + **UI mapping summary** |
-| API output | Single `products[]` with `readiness` embedded | **`ai_ready_feed`**, **`readiness_report`**, **`summary`** — **no `readiness` inside feed items** |
-| Validation | Basic | **Minor-unit prices**, **machine availability enum**, **category-aligned suggestions**, **explicit policy gap counting** |
-| UX | Results cards + lists | **Report dashboard**: KPIs, **product table**, **product detail** (original → normalized → issues) |
-| Export | One JSON | **Three downloads** + **OpenAI-style preview** (not official integration) |
-| Intelligence | Rules only | **Rules always first**; optional **Gemini 2.5 Pro** (primary LLM), then **OpenAI GPT‑5.5** (fallback/validator), then rules-only if both fail or keys missing |
+| Input | CSV + paste + sample | **+ `.xlsx`** with **worksheet picker** when multiple sheets |
+| Column handling | Fixed alias table | **Central mapping** + **UI mapping summary** |
+| API output | Single `products[]` with embedded readiness | **`ai_ready_feed`**, **`readiness_report`**, **`summary`** |
+| Validation | Basic | Minor-unit prices, availability enum, category suggestions, policy gaps |
+| UX | Results cards | **Dashboard**: KPIs, product table, row audit drawer |
+| Export | One JSON | Three downloads + OpenAI-style preview |
+| Intelligence | Rules only | Rules first → **Gemini 2.5 Pro** (batched) → **OpenAI fallback** → rules |
 
-## Out of scope (unchanged)
+## LLM strategy
 
-- No auth, payments, Shopify/Amazon/TikTok, official OpenAI upload, product graph DB.
-
-## LLM strategy (current)
-
-Pipeline order after rule-based extract/normalize (`processPipeline` → `enrichDraftProductsWithOptionalLlm`):
-
-1. **Rule-based** rows are always produced first (CSV/XLSX/text extractors + `normalizeProducts`).
-2. **Primary LLM — Gemini 2.5 Pro** via Google Generative Language API (`generateContent`, JSON MIME type), when `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` is set. Default model id: **`gemini-2.5-pro`** (`FEEDLAYER_GEMINI_MODEL` overrides if Google renames).
-3. **Fallback / validator — OpenAI** (`chat.completions` + `response_format: json_object`) when `OPENAI_API_KEY` is set, **if** Gemini is not configured, errors, or returns JSON that fails Zod validation.
-4. If neither model returns valid merged JSON → **unchanged rule drafts** (no invented fields).
+1. Rule-based extract + normalize (always).
+2. **Gemini 2.5 Pro** in batches of `FEEDLAYER_LLM_BATCH_SIZE` (default 25).
+3. **OpenAI fallback** per batch only if Gemini fails — **not** a second pass after Gemini succeeds.
+4. Invalid/missing LLM → unchanged rule drafts for that batch.
 
 ### Environment variables
 
-| Variable | Purpose |
-|----------|---------|
-| `GOOGLE_GENERATIVE_AI_API_KEY` or `GEMINI_API_KEY` | Enables **primary** Gemini pass. |
-| `FEEDLAYER_GEMINI_MODEL` | Default: **`gemini-2.5-pro`**. Confirm in [Gemini API models](https://ai.google.dev/gemini-api/docs/models). |
-| `OPENAI_API_KEY` | Enables **fallback/validator** OpenAI pass. |
-| `FEEDLAYER_OPENAI_MODEL` | Default: **`gpt-5.5`**. |
-| `FEEDLAYER_LLM_MAX_PRODUCTS` | Max products per LLM request (default `100`, max `200`). `0` = skip all LLM. |
-| `FEEDLAYER_LLM_ENABLED` | `false` or `0` = skip all LLM. |
-
-### LLM behavior constraints
-
-- Same JSON schema + **Zod** on the server; invalid output from either provider is discarded for that pass.
-- Prompts forbid inventing unavailable facts; `mergePatch` adds conservative guards.
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GEMINI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` | — | Primary LLM |
+| `FEEDLAYER_GEMINI_MODEL` | `gemini-2.5-pro` | Gemini model id |
+| `OPENAI_API_KEY` | — | Fallback after Gemini failure |
+| `FEEDLAYER_OPENAI_MODEL` | `gpt-5.5` | OpenAI model id |
+| `FEEDLAYER_LLM_BATCH_SIZE` | `25` | SKUs per LLM request (5–100) |
+| `FEEDLAYER_LLM_MAX_PRODUCTS` | `500` | Max SKUs enriched per run (`0` = off) |
+| `FEEDLAYER_LLM_ENABLED` | on | `false` = skip all LLM |
 
 ### Catalog size
 
-- **≥ 100 products** per run: parsing/scoring O(n). Each LLM pass sends up to `FEEDLAYER_LLM_MAX_PRODUCTS` rows (single request per provider attempt).
+- Rules path: **100+ SKUs** verified (`test-catalog-100.csv`).
+- LLM path: batched — e.g. 500 SKUs ≈ 20 requests at default batch size.
 
-## Data model (1.0 response)
+## Excel
 
-Top-level JSON (also what “Download full FeedLayer report” saves):
-
-```text
-processed_at
-input { type, product_count, sheet? }
-column_mapping { fields: [{ canonical, sources[] }] }
-summary { products_processed, variants_detected, missing_fields_count, weak_descriptions_count, missing_policies_count, variant_issues_count }
-overall { score, status }
-ai_ready_feed: ProductFeedItem[]
-readiness_report: { products: ReadinessProduct[] }
-openai_style_feed_preview: { items: OpenAIStyleItem[] }
-```
+- `POST /api/process/sheets` lists worksheet names.
+- UI shows picker when workbook has **2+ sheets**; multipart field **`sheet`** selects worksheet.
+- Fixture: [`public/test-multisheet.xlsx`](../../../public/test-multisheet.xlsx).
 
 ## Verification
 
 ```bash
-npm run lint
-npm run build
-npm run verify
+npm run lint && npm run build && npm run verify
 ```
+
+Cases: 5-SKU samples, **100-SKU** CSV, **LLM chunk helpers**, **multi-sheet XLSX**.
+
+## Deploy & security
+
+- Deploy: [`docs/DEPLOYMENT.md`](../../DEPLOYMENT.md)
+- SheetJS audit: [`docs/SECURITY.md`](../../SECURITY.md)
 
 ## Changelog
 
-- **2026-05-10 (d):** LLM chain: **Gemini 2.5 Pro primary** (`gemini-2.5-pro` default), **OpenAI GPT‑5.5 fallback/validator**, then rules-only.
-- **2026-05-10 (c):** OpenAI-only interim (reverted in favor of Gemini-primary stack).
-- **2026-05-10:** Shipped 1.0 pilot (xlsx, mapping, split reports, dashboard, exports).
+- **2026-05-28 (b):** Worksheet picker, LLM batching, multi-sheet test fixture, security doc.
+- **2026-05-28:** 100-SKU verify, deployment doc, 1.0 complete marker.
+- **2026-05-10:** Initial 1.0 pilot (xlsx, mapping, split reports, dashboard).
 
 ## Key code paths
 
 | Concern | Location |
 |--------|-----------|
-| LLM chain | `src/lib/llm/enrichCatalog.ts` |
+| LLM batching + fallback | `src/lib/llm/enrichCatalog.ts` |
+| Sheet list / parse | `src/lib/parseExcel.ts` |
+| Sheet picker UI | `src/components/SheetPicker.tsx` |
 | Orchestration | `src/lib/processPipeline.ts` |
-| HTTP entry | `src/app/api/process/route.ts` |
+| HTTP | `src/app/api/process/route.ts`, `.../sheets/route.ts` |

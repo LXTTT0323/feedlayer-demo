@@ -5,7 +5,7 @@ Each subfolder documents one **shipped demo snapshot** (scope, test notes, and k
 | Folder | Name | App location |
 |--------|------|----------------|
 | `0.5/` | Product 0.5 — CSV + paste + sample, rule-based pipeline | Superseded by 1.0 UI/API shape |
-| `1.0/` | Product 1.0 — CSV/XLSX audit, split exports, optional LLM | **Current** (`feedlayer-demo`) |
+| `1.0/` | Product 1.0 — **complete**: CSV/XLSX + sheet picker, LLM batching, 100-SKU verify | **Current** |
 
 ---
 
@@ -19,4 +19,6 @@ npm run build
 npm run verify
 ```
 
-`npm run verify` runs `scripts/verify-pipeline.ts` (same data pipeline as `POST /api/process` without HTTP).
+`npm run verify` runs `scripts/verify-pipeline.ts` (same pipeline as `POST /api/process`, including a **100-row** rules-only case on `public/test-catalog-100.csv`).
+
+Deploy: [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md).

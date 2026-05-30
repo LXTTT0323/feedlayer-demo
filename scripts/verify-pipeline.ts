@@ -8,6 +8,8 @@ import { join } from "node:path";
 
 import { runCatalogPipeline, runRulesOnlyFromCsvRows } from "../src/lib/processPipeline";
 import { parseCsvToTable } from "../src/lib/parseCsv";
+import { chunkProducts, llmBatchSize, maxLlmProducts } from "../src/lib/llm/enrichCatalog";
+import { listXlsxSheetNames, parseXlsxFirstSheet } from "../src/lib/parseExcel";
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -82,6 +84,41 @@ P-X,SKU-B,Widget,,12,USD,out of stock,Cat,https://example.com/a.jpg`;
   await runCase("Legacy row-only extract still works", async () => {
     const rows = runRulesOnlyFromCsvRows("product_id,title\nA,Hi");
     assert(rows.length === 1 && rows[0]?.product_id === "A", "legacy");
+  });
+
+  await runCase("100-SKU catalog (rules-only, skip LLM)", async () => {
+    const csv = readFileSync(join(process.cwd(), "public", "test-catalog-100.csv"), "utf8");
+    const r = await runCatalogPipeline({ kind: "csv_text", csvText: csv, skipLlm: true });
+    assert(r.ai_ready_feed.length === 100, "100 products");
+    assert(r.readiness_report.products.length === 100, "100 readiness rows");
+    assert(r.summary.products_processed === 100, "summary count");
+    assert(r.version === "1.0", "version");
+  });
+
+  await runCase("LLM batch chunking helpers", async () => {
+    const items = Array.from({ length: 100 }, (_, i) => i);
+    const chunks = chunkProducts(items, llmBatchSize());
+    assert(chunks.length === Math.ceil(100 / llmBatchSize()), "chunk count");
+    assert(chunks.flat().length === 100, "all items preserved");
+    assert(maxLlmProducts() >= 100, "default max covers 100 SKUs");
+  });
+
+  await runCase("Multi-sheet XLSX: sheet list + Products sheet", async () => {
+    const buf = readFileSync(join(process.cwd(), "public", "test-multisheet.xlsx"));
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    const sheets = listXlsxSheetNames(ab);
+    assert(sheets.length === 2, "two sheets");
+    assert(sheets.includes("Products"), "Products sheet");
+    const table = parseXlsxFirstSheet(ab, "Products");
+    assert(table.rows.length === 5, "five product rows on Products sheet");
+    const r = await runCatalogPipeline({
+      kind: "xlsx_buffer",
+      xlsxBuffer: ab,
+      sheetName: "Products",
+      skipLlm: true,
+    });
+    assert(r.ai_ready_feed.length === 5, "five products from selected sheet");
+    assert(r.input.sheet === "Products", "report sheet name");
   });
 
   console.log("");

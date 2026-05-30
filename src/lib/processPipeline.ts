@@ -22,6 +22,10 @@ export async function runCatalogPipeline(args: {
   csvText?: string;
   xlsxBuffer?: ArrayBuffer;
   text?: string;
+  /** When true, skip optional LLM enrichment (faster CI / rules-only checks). */
+  skipLlm?: boolean;
+  /** Excel worksheet name (defaults to first sheet). */
+  sheetName?: string;
 }): Promise<FeedLayerFullReport> {
   let table: ParsedTable = { rows: [], column_mapping: { fields: [] } };
   let inputType: FeedInputType = "csv";
@@ -35,7 +39,7 @@ export async function runCatalogPipeline(args: {
     audits = ex.audits;
     drafts = ex.products;
   } else if (args.kind === "xlsx_buffer") {
-    table = parseXlsxFirstSheet(args.xlsxBuffer ?? new ArrayBuffer(0));
+    table = parseXlsxFirstSheet(args.xlsxBuffer ?? new ArrayBuffer(0), args.sheetName);
     inputType = "xlsx";
     const ex = extractFromTableRows(table.rows);
     audits = ex.audits;
@@ -63,7 +67,9 @@ export async function runCatalogPipeline(args: {
   }
 
   let normalized = normalizeProducts(drafts);
-  normalized = await enrichDraftProductsWithOptionalLlm(normalized);
+  if (!args.skipLlm) {
+    normalized = await enrichDraftProductsWithOptionalLlm(normalized);
+  }
   const validated = validateProducts(normalized);
   const scored = scoreProducts(validated.products);
 

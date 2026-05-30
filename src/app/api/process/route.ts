@@ -20,8 +20,11 @@ export async function POST(req: Request) {
       }
       const name = "name" in file && typeof file.name === "string" ? file.name.toLowerCase() : "";
       const buf = await file.arrayBuffer();
+      const sheetField = form.get("sheet");
+      const sheetName =
+        typeof sheetField === "string" && sheetField.trim() ? sheetField.trim() : undefined;
       if (name.endsWith(".xlsx")) {
-        const report = await runCatalogPipeline({ kind: "xlsx_buffer", xlsxBuffer: buf });
+        const report = await runCatalogPipeline({ kind: "xlsx_buffer", xlsxBuffer: buf, sheetName });
         return NextResponse.json(report);
       }
       if (name.endsWith(".csv")) {
@@ -89,7 +92,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           error:
-            "No product rows found. For Excel, ensure the first sheet has a header row and data below it.",
+            "No product rows found. For Excel, pick a sheet with a header row and data below it.",
         },
         { status: 400 },
       );

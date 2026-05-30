@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UploadBox } from "@/components/UploadBox";
+import { SheetPicker } from "@/components/SheetPicker";
 import { SampleDataButton } from "@/components/SampleDataButton";
 import { ProcessingSteps } from "@/components/ProcessingSteps";
 import { saveLastResult } from "@/lib/clientStorage";
@@ -17,6 +18,7 @@ export default function HomeClient() {
   const [activeStep, setActiveStep] = useState(0);
   const [pasteText, setPasteText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [sheetPicker, setSheetPicker] = useState<{ file: File; sheets: string[] } | null>(null);
 
   const canSubmitText = useMemo(() => pasteText.trim().length > 10, [pasteText]);
 
@@ -48,7 +50,7 @@ export default function HomeClient() {
     }
   }
 
-  async function processFile(file: File) {
+  async function processFileWithSheet(file: File, sheet?: string) {
     setError(null);
     setMode("processing");
     setActiveStep(0);
@@ -58,6 +60,7 @@ export default function HomeClient() {
     try {
       const fd = new FormData();
       fd.append("file", file);
+      if (sheet) fd.append("sheet", sheet);
       const res = await fetch("/api/process", { method: "POST", body: fd });
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -74,8 +77,46 @@ export default function HomeClient() {
     }
   }
 
+  async function onFileSelected(file: File) {
+    setError(null);
+    const isXlsx = file.name.toLowerCase().endsWith(".xlsx");
+    if (isXlsx) {
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/process/sheets", { method: "POST", body: fd });
+        if (!res.ok) {
+          const j = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(j?.error || `Could not read workbook (${res.status})`);
+        }
+        const { sheets } = (await res.json()) as { sheets: string[] };
+        if (sheets.length > 1) {
+          setSheetPicker({ file, sheets });
+          return;
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not read Excel file");
+        return;
+      }
+    }
+    await processFileWithSheet(file);
+  }
+
   return (
     <div className="min-h-full flex-1 bg-slate-50">
+      {sheetPicker ? (
+        <SheetPicker
+          fileName={sheetPicker.file.name}
+          sheets={sheetPicker.sheets}
+          onCancel={() => setSheetPicker(null)}
+          onConfirm={(sheet) => {
+            const file = sheetPicker.file;
+            setSheetPicker(null);
+            void processFileWithSheet(file, sheet);
+          }}
+        />
+      ) : null}
+
       <div className="mx-auto max-w-6xl px-6 py-12">
         <div className="flex flex-col gap-10">
           <header className="max-w-3xl">
@@ -90,8 +131,7 @@ export default function HomeClient() {
               availability, scores readiness, and produces a separated feed plus audit report for pilot sellers.
             </p>
             <div className="mt-5 text-sm text-slate-600">
-              <span className="font-semibold text-slate-900">Coming later:</span> multi-sheet picker, PDFs, images, and
-              marketplace connectors.
+              <span className="font-semibold text-slate-900">Coming later:</span> PDFs, images, and marketplace connectors.
             </div>
           </header>
 
@@ -101,24 +141,25 @@ export default function HomeClient() {
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="text-sm font-semibold text-slate-900">What’s happening</div>
                 <div className="mt-2 text-sm text-slate-600">
-                  Reading rows, mapping headers, optional OpenAI enrichment, validating, scoring, and building separated exports
-                  (AI-ready feed vs readiness report).
+                  Reading rows, mapping headers, optional LLM enrichment (batched), validating, scoring, and building separated
+                  exports (AI-ready feed vs readiness report).
                 </div>
                 <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  Designed for small–medium catalogs (100+ SKUs per run). Large files may take longer when LLM is enabled.
+                  Large catalogs are processed in LLM batches (default 25 SKUs per request). Rules-only path handles 100+ SKUs
+                  without API calls.
                 </div>
               </div>
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-6">
-                <UploadBox onFileSelected={(file) => processFile(file)} />
+                <UploadBox onFileSelected={(file) => void onFileSelected(file)} />
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="text-sm font-semibold text-slate-900">Paste product listing text</div>
                   <div className="mt-1 text-sm text-slate-600">
-                    Paste unstructured text and we’ll extract a structured product record (rules first; optional OpenAI when
-                    `OPENAI_API_KEY` is set).
+                    Paste unstructured text and we’ll extract a structured product record (rules first; optional LLM when keys are
+                    set).
                   </div>
                   <textarea
                     value={pasteText}
@@ -197,11 +238,9 @@ export default function HomeClient() {
           )}
 
           <footer className="pt-2 text-xs text-slate-500">
-            Optional LLM: primary <span className="font-mono">GEMINI_API_KEY</span> /{" "}
-            <span className="font-mono">GOOGLE_GENERATIVE_AI_API_KEY</span> (Gemini 2.5 Pro,{" "}
-            <span className="font-mono">FEEDLAYER_GEMINI_MODEL</span>); fallback{" "}
-            <span className="font-mono">OPENAI_API_KEY</span> (<span className="font-mono">FEEDLAYER_OPENAI_MODEL</span>, default{" "}
-            <span className="font-mono">gpt-5.5</span>). Rules-only if disabled or keys missing.
+            Optional LLM: primary <span className="font-mono">GEMINI_API_KEY</span> (Gemini 2.5 Pro); fallback{" "}
+            <span className="font-mono">OPENAI_API_KEY</span> if Gemini fails — batched via{" "}
+            <span className="font-mono">FEEDLAYER_LLM_BATCH_SIZE</span> (default 25). Rules-only if disabled or keys missing.
           </footer>
         </div>
       </div>

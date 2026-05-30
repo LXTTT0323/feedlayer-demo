@@ -15,8 +15,8 @@ export function UploadBox({
         <div>
           <div className="text-sm font-semibold text-slate-900">Upload catalog file</div>
           <div className="mt-1 text-sm text-slate-600">
-            <span className="font-medium">.csv</span> or <span className="font-medium">.xlsx</span> — first worksheet is used
-            for Excel (sheet picker later).
+            <span className="font-medium">.csv</span> or <span className="font-medium">.xlsx</span> — multi-sheet Excel
+            files show a worksheet picker before processing.
           </div>
         </div>
         <button

@@ -2,9 +2,14 @@ import * as XLSX from "xlsx";
 import { buildColumnMappingSummary, rowFromValues, type TableRow } from "@/lib/columnMapping";
 import type { ParsedTable } from "@/lib/parseCsv";
 
+/** List worksheet names without parsing cell data. */
+export function listXlsxSheetNames(buffer: ArrayBuffer): string[] {
+  const wb = XLSX.read(buffer, { type: "array", bookSheets: true, bookVBA: false });
+  return wb.SheetNames ?? [];
+}
+
 /**
- * Parse first worksheet of an .xlsx workbook into the same `TableRow` shape as CSV.
- * Sheet selection UI can be added later by passing `sheetName`.
+ * Parse a worksheet of an .xlsx workbook into the same `TableRow` shape as CSV.
  */
 export function parseXlsxFirstSheet(buffer: ArrayBuffer, sheetName?: string): ParsedTable {
   const wb = XLSX.read(buffer, { type: "array", cellDates: false });
