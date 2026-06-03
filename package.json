@@ -9,7 +9,8 @@
     "lint": "eslint",
     "verify": "tsx scripts/verify-pipeline.ts",
     "generate:catalog-100": "tsx scripts/generate-catalog-100.ts",
-    "generate:multisheet-xlsx": "tsx scripts/generate-multisheet-xlsx.ts"
+    "generate:multisheet-xlsx": "tsx scripts/generate-multisheet-xlsx.ts",
+    "generate:full-demo": "tsx scripts/generate-full-demo-xlsx.ts"
   },
   "dependencies": {
     "next": "16.2.6",

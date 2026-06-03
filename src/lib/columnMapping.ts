@@ -172,8 +172,46 @@ export type TableRow = {
   canonical: Record<string, string>;
 };
 
-/** Zip raw headers with cell values into raw record; map to canonical record. */
-export function rowFromValues(rawHeaders: string[], values: string[]): TableRow {
+/** User override: source header → canonical field id, or `_ignore` to skip column. */
+export type UserColumnOverrides = Record<string, string>;
+
+export const IGNORE_COLUMN = "_ignore";
+
+export function resolveCanonicalHeader(rawHeader: string, overrides?: UserColumnOverrides): string | null {
+  const trimmed = rawHeader.trim();
+  if (!trimmed) return null;
+  const ov = overrides?.[trimmed];
+  if (ov === IGNORE_COLUMN) return null;
+  if (ov && ov.trim()) return ov.trim();
+  return mapHeaderToCanonical(trimmed) ?? normalizeHeaderKey(trimmed);
+}
+
+export function buildColumnMappingSummaryWithOverrides(
+  rawHeaders: string[],
+  overrides?: UserColumnOverrides,
+): ColumnMappingSummary {
+  const summary = new Map<string, Set<string>>();
+  for (const h of rawHeaders) {
+    const trimmed = h.trim();
+    if (!trimmed) continue;
+    const canon = resolveCanonicalHeader(trimmed, overrides);
+    if (!canon) continue;
+    mergeSources(summary, canon, trimmed);
+  }
+  const fields: ColumnMappingEntry[] = [...summary.entries()].map(([canonical, sources]) => ({
+    canonical,
+    sources: [...sources],
+  }));
+  fields.sort((a, b) => a.canonical.localeCompare(b.canonical));
+  return { fields };
+}
+
+/** Zip raw headers with cell values; apply optional user overrides. */
+export function rowFromValuesWithOverrides(
+  rawHeaders: string[],
+  values: string[],
+  overrides?: UserColumnOverrides,
+): TableRow {
   const raw: Record<string, string> = {};
   for (let i = 0; i < rawHeaders.length; i++) {
     const key = rawHeaders[i]?.trim();
@@ -184,9 +222,14 @@ export function rowFromValues(rawHeaders: string[], values: string[]): TableRow 
   for (let i = 0; i < rawHeaders.length; i++) {
     const orig = rawHeaders[i]?.trim();
     if (!orig) continue;
+    const c = resolveCanonicalHeader(orig, overrides);
+    if (!c) continue;
     const v = (values[i] ?? "").trim();
-    const c = mapHeaderToCanonical(orig) ?? normalizeHeaderKey(orig);
     canonical[c] = v;
   }
   return { raw, canonical };
+}
+
+export function rowFromValues(rawHeaders: string[], values: string[]): TableRow {
+  return rowFromValuesWithOverrides(rawHeaders, values);
 }

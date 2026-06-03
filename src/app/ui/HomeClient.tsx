@@ -4,77 +4,136 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UploadBox } from "@/components/UploadBox";
 import { SheetPicker } from "@/components/SheetPicker";
+import { ColumnMappingEditor } from "@/components/ColumnMappingEditor";
 import { SampleDataButton } from "@/components/SampleDataButton";
 import { ProcessingSteps } from "@/components/ProcessingSteps";
 import { saveLastResult } from "@/lib/clientStorage";
 import { SAMPLE_HELPERS } from "@/lib/sampleData";
 import type { FeedLayerFullReport } from "@/types/report";
+import type { TablePreview } from "@/lib/tableOverrides";
+import type { UserColumnOverrides } from "@/lib/columnMapping";
+import type { ProcessProgressEvent } from "@/lib/processProgress";
 
 type Mode = "idle" | "processing";
+
+type MappingFlow = {
+  file: File;
+  sheet?: string;
+  preview: TablePreview;
+  overrides: UserColumnOverrides;
+};
+
+function parseSseBuffer(
+  buffer: string,
+  onEvent: (event: string, data: string) => void,
+): string {
+  const blocks = buffer.split("\n\n");
+  const rest = blocks.pop() ?? "";
+  for (const block of blocks) {
+    if (!block.trim()) continue;
+    let event = "message";
+    let data = "";
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      if (line.startsWith("data:")) data += line.slice(5).trim();
+    }
+    if (data) onEvent(event, data);
+  }
+  return rest;
+}
 
 export default function HomeClient() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("idle");
-  const [activeStep, setActiveStep] = useState(0);
+  const [progress, setProgress] = useState<ProcessProgressEvent | null>(null);
   const [pasteText, setPasteText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sheetPicker, setSheetPicker] = useState<{ file: File; sheets: string[] } | null>(null);
+  const [mappingFlow, setMappingFlow] = useState<MappingFlow | null>(null);
 
   const canSubmitText = useMemo(() => pasteText.trim().length > 10, [pasteText]);
 
-  async function processJson(body: unknown) {
-    setError(null);
-    setMode("processing");
-    setActiveStep(0);
-    const tick = window.setInterval(() => {
-      setActiveStep((s) => Math.min(5, s + 1));
-    }, 450);
+  async function runStream(body: FormData | Record<string, unknown>): Promise<FeedLayerFullReport> {
+    const isForm = body instanceof FormData;
+    const res = await fetch("/api/process/stream", {
+      method: "POST",
+      body: isForm ? body : JSON.stringify(body),
+      headers: isForm ? undefined : { "content-type": "application/json" },
+    });
+
+    if (!res.ok || !res.body) {
+      throw new Error(`Processing failed (${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let report: FeedLayerFullReport | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      buf = parseSseBuffer(buf, (event, data) => {
+        if (event === "progress") {
+          setProgress(JSON.parse(data) as ProcessProgressEvent);
+        } else if (event === "result") {
+          report = JSON.parse(data) as FeedLayerFullReport;
+        } else if (event === "error") {
+          const j = JSON.parse(data) as { error?: string };
+          throw new Error(j.error || "Processing failed");
+        }
+      });
+    }
+
+    if (!report) throw new Error("No result returned");
+    return report;
+  }
+
+  async function finishWithReport(report: FeedLayerFullReport) {
+    saveLastResult(report);
     try {
-      const res = await fetch("/api/process", {
+      const shareRes = await fetch("/api/share", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(report),
       });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error || `Processing failed (${res.status})`);
+      if (shareRes.ok) {
+        const { id } = (await shareRes.json()) as { id: string };
+        router.push(`/results?id=${id}`);
+        return;
       }
-      const result = (await res.json()) as FeedLayerFullReport;
-      saveLastResult(result);
-      router.push("/results");
+    } catch {
+      /* fall back to session only */
+    }
+    router.push("/results");
+  }
+
+  async function processStreamRequest(body: FormData | Record<string, unknown>) {
+    setError(null);
+    setMode("processing");
+    setProgress(null);
+    try {
+      const result = await runStream(body);
+      await finishWithReport(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Processing failed");
       setMode("idle");
-    } finally {
-      window.clearInterval(tick);
     }
   }
 
-  async function processFileWithSheet(file: File, sheet?: string) {
+  async function startFilePreview(file: File, sheet?: string) {
     setError(null);
-    setMode("processing");
-    setActiveStep(0);
-    const tick = window.setInterval(() => {
-      setActiveStep((s) => Math.min(5, s + 1));
-    }, 450);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      if (sheet) fd.append("sheet", sheet);
-      const res = await fetch("/api/process", { method: "POST", body: fd });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error || `Processing failed (${res.status})`);
-      }
-      const result = (await res.json()) as FeedLayerFullReport;
-      saveLastResult(result);
-      router.push("/results");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Processing failed");
-      setMode("idle");
-    } finally {
-      window.clearInterval(tick);
+    const fd = new FormData();
+    fd.append("file", file);
+    if (sheet) fd.append("sheet", sheet);
+    const res = await fetch("/api/process/preview", { method: "POST", body: fd });
+    if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(j?.error || `Preview failed (${res.status})`);
     }
+    const preview = (await res.json()) as TablePreview;
+    setMappingFlow({ file, sheet, preview, overrides: {} });
   }
 
   async function onFileSelected(file: File) {
@@ -99,7 +158,23 @@ export default function HomeClient() {
         return;
       }
     }
-    await processFileWithSheet(file);
+    try {
+      await startFilePreview(file);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Preview failed");
+    }
+  }
+
+  function confirmMappingFlow() {
+    if (!mappingFlow) return;
+    const fd = new FormData();
+    fd.append("file", mappingFlow.file);
+    if (mappingFlow.sheet) fd.append("sheet", mappingFlow.sheet);
+    if (Object.keys(mappingFlow.overrides).length > 0) {
+      fd.append("columnOverrides", JSON.stringify(mappingFlow.overrides));
+    }
+    setMappingFlow(null);
+    void processStreamRequest(fd);
   }
 
   return (
@@ -112,8 +187,20 @@ export default function HomeClient() {
           onConfirm={(sheet) => {
             const file = sheetPicker.file;
             setSheetPicker(null);
-            void processFileWithSheet(file, sheet);
+            void startFilePreview(file, sheet).catch((e) =>
+              setError(e instanceof Error ? e.message : "Preview failed"),
+            );
           }}
+        />
+      ) : null}
+
+      {mappingFlow ? (
+        <ColumnMappingEditor
+          preview={mappingFlow.preview}
+          overrides={mappingFlow.overrides}
+          onChange={(overrides) => setMappingFlow({ ...mappingFlow, overrides })}
+          onConfirm={confirmMappingFlow}
+          onCancel={() => setMappingFlow(null)}
         />
       ) : null}
 
@@ -121,32 +208,23 @@ export default function HomeClient() {
         <div className="flex flex-col gap-10">
           <header className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
-              FeedLayer Product 1.0 — catalog audit pilot
+              FeedLayer Product 1.5 — shareable catalog audit demo
             </div>
             <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900">
               Turn messy product data into AI-ready feeds.
             </h1>
             <p className="mt-4 text-lg leading-7 text-slate-600">
-              Upload a spreadsheet (CSV or Excel) or paste product listing text. FeedLayer maps columns, normalizes prices and
-              availability, scores readiness, and produces a separated feed plus audit report for pilot sellers.
+              Upload CSV or Excel, review column mapping, track real processing progress, and share your audit report link.
             </p>
-            <div className="mt-5 text-sm text-slate-600">
-              <span className="font-semibold text-slate-900">Coming later:</span> PDFs, images, and marketplace connectors.
-            </div>
           </header>
 
           {mode === "processing" ? (
             <div className="grid gap-6 md:grid-cols-2">
-              <ProcessingSteps activeIndex={activeStep} />
+              <ProcessingSteps progress={progress} />
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="text-sm font-semibold text-slate-900">What’s happening</div>
                 <div className="mt-2 text-sm text-slate-600">
-                  Reading rows, mapping headers, optional LLM enrichment (batched), validating, scoring, and building separated
-                  exports (AI-ready feed vs readiness report).
-                </div>
-                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  Large catalogs are processed in LLM batches (default 25 SKUs per request). Rules-only path handles 100+ SKUs
-                  without API calls.
+                  Live progress from the server pipeline — including LLM batches when API keys are configured.
                 </div>
               </div>
             </div>
@@ -154,25 +232,20 @@ export default function HomeClient() {
             <div className="grid gap-6 md:grid-cols-2">
               <div className="space-y-6">
                 <UploadBox onFileSelected={(file) => void onFileSelected(file)} />
-
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="text-sm font-semibold text-slate-900">Paste product listing text</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Paste unstructured text and we’ll extract a structured product record (rules first; optional LLM when keys are
-                    set).
-                  </div>
                   <textarea
                     value={pasteText}
                     onChange={(e) => setPasteText(e.target.value)}
                     rows={7}
-                    placeholder='Example: "500ml stainless steel insulated bottle, black and white colors, ... selling price $19.99"'
+                    placeholder='Example: "500ml stainless steel insulated bottle..."'
                     className="mt-4 w-full resize-y rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-teal-600/30"
                   />
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
                       disabled={!canSubmitText}
-                      onClick={() => processJson({ type: "text", text: pasteText })}
+                      onClick={() => processStreamRequest({ type: "text", text: pasteText })}
                       className={[
                         "rounded-xl px-4 py-2 text-sm font-semibold shadow-sm",
                         canSubmitText ? "bg-teal-600 text-white hover:bg-teal-700" : "bg-slate-200 text-slate-500",
@@ -194,36 +267,15 @@ export default function HomeClient() {
               <div className="space-y-6">
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="text-sm font-semibold text-slate-900">Try sample data</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Load an intentionally messy sample catalog (CSV) or a short listing paragraph.
-                  </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <SampleDataButton
                       label={SAMPLE_HELPERS.sampleCatalogLabel}
-                      onClick={() => processJson({ type: "sample", sample: "catalog" })}
+                      onClick={() => processStreamRequest({ type: "sample", sample: "catalog" })}
                     />
                     <SampleDataButton
                       label={SAMPLE_HELPERS.sampleTextLabel}
-                      onClick={() => processJson({ type: "sample", sample: "text" })}
+                      onClick={() => processStreamRequest({ type: "sample", sample: "text" })}
                     />
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="text-sm font-semibold text-slate-900">What you’ll get</div>
-                  <div className="mt-4 grid gap-3">
-                    {[
-                      "AI-ready feed JSON (prices in minor units, no embedded readiness)",
-                      "Readiness report JSON (per-product scores, missing fields, suggestions)",
-                      "Summary KPIs + product table + row-level audit drawer",
-                      "OpenAI-style feed preview (not an official integration)",
-                      "Three download buttons (feed / readiness / full report)",
-                    ].map((x) => (
-                      <div key={x} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <div className="mt-1 h-2.5 w-2.5 rounded-full bg-teal-600" />
-                        <div className="text-sm font-medium text-slate-800">{x}</div>
-                      </div>
-                    ))}
                   </div>
                 </div>
 
@@ -236,12 +288,6 @@ export default function HomeClient() {
               </div>
             </div>
           )}
-
-          <footer className="pt-2 text-xs text-slate-500">
-            Optional LLM: primary <span className="font-mono">GEMINI_API_KEY</span> (Gemini 2.5 Pro); fallback{" "}
-            <span className="font-mono">OPENAI_API_KEY</span> if Gemini fails — batched via{" "}
-            <span className="font-mono">FEEDLAYER_LLM_BATCH_SIZE</span> (default 25). Rules-only if disabled or keys missing.
-          </footer>
         </div>
       </div>
     </div>

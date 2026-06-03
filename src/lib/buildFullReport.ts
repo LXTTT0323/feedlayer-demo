@@ -72,7 +72,7 @@ export function buildFullReport(args: {
   const variants_detected = products.reduce((n, p) => n + (p.variants?.length ?? 0), 0);
 
   return {
-    version: "1.0",
+    version: "1.5",
     processed_at: new Date().toISOString(),
     input,
     column_mapping,

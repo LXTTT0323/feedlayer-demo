@@ -2,6 +2,30 @@
 
 import { useState } from "react";
 import type { FeedLayerFullReport, ReadinessReportProduct } from "@/types/report";
+import { groupIssues, TIER_LABELS } from "@/lib/issuePriority";
+
+const COMPARE_FIELDS: { label: string; orig: (p: ReadinessReportProduct) => string; norm: (p: ReadinessReportProduct) => string }[] = [
+  { label: "Title", orig: (p) => pickRaw(p, ["product_name", "title", "name"]), norm: (p) => p.normalized_snapshot.title ?? "" },
+  { label: "Description", orig: (p) => pickRaw(p, ["desc", "description"]), norm: (p) => p.normalized_snapshot.description ?? "" },
+  { label: "Category", orig: (p) => pickRaw(p, ["category", "product_type"]), norm: (p) => p.normalized_snapshot.category ?? "" },
+  { label: "Price", orig: (p) => pickRaw(p, ["price", "amount", "sale_price"]), norm: (p) => formatPrice(p) },
+  { label: "Availability", orig: (p) => pickRaw(p, ["stock", "availability", "stock_status"]), norm: (p) => p.normalized_snapshot.variants[0]?.availability ?? "" },
+  { label: "Image", orig: (p) => pickRaw(p, ["img", "image_url", "image"]), norm: (p) => p.normalized_snapshot.media[0]?.url ?? "" },
+];
+
+function pickRaw(p: ReadinessReportProduct, keys: string[]): string {
+  for (const k of keys) {
+    const v = p.original_input[k];
+    if (v?.trim()) return v;
+  }
+  return "";
+}
+
+function formatPrice(p: ReadinessReportProduct): string {
+  const v = p.normalized_snapshot.variants[0];
+  if (!v?.price) return "";
+  return `${v.price.currency} ${v.price.amount}`;
+}
 
 export function ProductCatalogTable({ report }: { report: FeedLayerFullReport }) {
   const [open, setOpen] = useState<ReadinessReportProduct | null>(null);
@@ -11,7 +35,7 @@ export function ProductCatalogTable({ report }: { report: FeedLayerFullReport })
     <>
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="text-sm font-semibold text-slate-900">Product audit table</div>
-        <p className="mt-1 text-sm text-slate-600">Click a row for original input, normalized snapshot, and issues.</p>
+        <p className="mt-1 text-sm text-slate-600">Click a row for before → after field comparison and issues.</p>
         <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-600">
@@ -59,65 +83,55 @@ export function ProductCatalogTable({ report }: { report: FeedLayerFullReport })
               </button>
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div>
-                <div className="text-xs font-semibold text-slate-700">Readiness score</div>
-                <div className="mt-1 text-2xl font-semibold text-slate-900">{open.readiness.score}/100</div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-700">Issues</div>
-                <div className="mt-1 text-sm text-slate-700">
-                  {open.readiness.missing_fields.length} missing · {open.readiness.warnings.length} warnings ·{" "}
-                  {open.readiness.suggestions.length} suggestions
-                </div>
+            <div className="mt-4 text-2xl font-semibold text-slate-900">{open.readiness.score}/100</div>
+
+            <div className="mt-6">
+              <div className="text-xs font-semibold text-slate-700">Before → after (key fields)</div>
+              <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Field</th>
+                      <th className="px-3 py-2 text-left">Original</th>
+                      <th className="px-3 py-2 text-left">Normalized</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {COMPARE_FIELDS.map((f) => {
+                      const before = f.orig(open) || "—";
+                      const after = f.norm(open) || "—";
+                      const changed = before !== "—" && after !== "—" && before !== after;
+                      return (
+                        <tr key={f.label} className="border-t border-slate-100">
+                          <td className="px-3 py-2 font-semibold text-slate-700">{f.label}</td>
+                          <td className="max-w-[10rem] truncate px-3 py-2 text-slate-600">{before}</td>
+                          <td className={`max-w-[10rem] truncate px-3 py-2 ${changed ? "font-medium text-teal-800" : "text-slate-800"}`}>
+                            {after}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="mt-6 space-y-4">
-              <div>
-                <div className="text-xs font-semibold text-slate-700">Original input (first row / paste)</div>
-                <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800">
-                  {JSON.stringify(open.original_input, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-700">Normalized snapshot (internal model)</div>
-                <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800">
-                  {JSON.stringify(open.normalized_snapshot, null, 2)}
-                </pre>
-              </div>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">Missing fields</div>
-                  <ul className="mt-2 list-inside list-disc text-xs text-slate-800">
-                    {open.readiness.missing_fields.length === 0 ? (
-                      <li className="list-none text-slate-500">None</li>
-                    ) : (
-                      open.readiness.missing_fields.map((m) => <li key={m}>{m}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">Warnings</div>
-                  <ul className="mt-2 list-inside list-disc text-xs text-slate-800">
-                    {open.readiness.warnings.length === 0 ? (
-                      <li className="list-none text-slate-500">None</li>
-                    ) : (
-                      open.readiness.warnings.map((w) => <li key={w}>{w}</li>)
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">Suggestions</div>
-                  <ul className="mt-2 list-inside list-disc text-xs text-slate-800">
-                    {open.readiness.suggestions.length === 0 ? (
-                      <li className="list-none text-slate-500">None</li>
-                    ) : (
-                      open.readiness.suggestions.map((s) => <li key={s}>{s}</li>)
-                    )}
-                  </ul>
-                </div>
-              </div>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              {(["blocking", "advisory", "other"] as const).map((tier) => {
+                const items = groupIssues(open.readiness.missing_fields)[tier];
+                return (
+                  <div key={tier}>
+                    <div className="text-xs font-semibold text-slate-700">{TIER_LABELS[tier]}</div>
+                    <ul className="mt-2 list-inside list-disc text-xs text-slate-800">
+                      {items.length === 0 ? (
+                        <li className="list-none text-slate-500">None</li>
+                      ) : (
+                        items.map((m) => <li key={m}>{m}</li>)
+                      )}
+                    </ul>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

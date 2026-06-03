@@ -216,7 +216,10 @@ async function enrichOneBatch(batch: DraftProduct[]): Promise<DraftProduct[]> {
  * Large catalogs are split into batches of `FEEDLAYER_LLM_BATCH_SIZE` (default 25).
  * Disable: no keys, `FEEDLAYER_LLM_ENABLED=false`, or `FEEDLAYER_LLM_MAX_PRODUCTS=0`.
  */
-export async function enrichDraftProductsWithOptionalLlm(products: DraftProduct[]): Promise<DraftProduct[]> {
+export async function enrichDraftProductsWithOptionalLlm(
+  products: DraftProduct[],
+  onBatch?: (batch: number, total: number) => void,
+): Promise<DraftProduct[]> {
   const cap = maxLlmProducts();
   if (llmDisabled() || cap === 0 || !anyLlmConfigured()) {
     return products;
@@ -227,8 +230,9 @@ export async function enrichDraftProductsWithOptionalLlm(products: DraftProduct[
   const batches = chunkProducts(toEnrich, llmBatchSize());
 
   const enriched: DraftProduct[] = [];
-  for (const batch of batches) {
-    enriched.push(...(await enrichOneBatch(batch)));
+  for (let i = 0; i < batches.length; i++) {
+    onBatch?.(i + 1, batches.length);
+    enriched.push(...(await enrichOneBatch(batches[i]!)));
   }
 
   return [...enriched, ...tail];

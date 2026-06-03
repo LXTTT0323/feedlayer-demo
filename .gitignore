@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# shared report snapshots (1.5)
+.feedlayer-shares/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

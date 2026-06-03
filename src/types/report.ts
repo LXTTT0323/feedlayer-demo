@@ -70,8 +70,14 @@ export type OpenAIStyleFeedItem = {
   brand?: string;
 };
 
+export type ReportVersion = "1.0" | "1.5";
+
+export function isSupportedReportVersion(v: string): v is ReportVersion {
+  return v === "1.0" || v === "1.5";
+}
+
 export type FeedLayerFullReport = {
-  version: "1.0";
+  version: ReportVersion;
   processed_at: string;
   input: {
     type: FeedInputType;

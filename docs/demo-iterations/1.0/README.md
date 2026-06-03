@@ -73,3 +73,42 @@ Cases: 5-SKU samples, **100-SKU** CSV, **LLM chunk helpers**, **multi-sheet XLSX
 | Sheet picker UI | `src/components/SheetPicker.tsx` |
 | Orchestration | `src/lib/processPipeline.ts` |
 | HTTP | `src/app/api/process/route.ts`, `.../sheets/route.ts` |
+
+---
+
+## Product 1.5 — plan & constraints
+
+**Status:** **shipped** — see [`../1.5/README.md`](../1.5/README.md) for implementation details.
+
+1.0 remains the **rules + split-report + LLM fallback** baseline. 1.5 adds **seller-facing demo polish** without new platforms.
+
+### 1.5 scope (what we build)
+
+| # | Feature | Why |
+|---|---------|-----|
+| P0-1 | **Column mapping preview + manual override** | Real Excel headers are wrong often; auto-only mapping blocks trust |
+| P0-2 | **SSE processing progress** | LLM batches can take minutes; fake timer is misleading |
+| P0-3 | **Shareable results URL** | YC / pilot needs a link, not screen-share |
+| P0-4 | **Verify: overrides + share round-trip** | Credibility beyond “should work” |
+| P1-1 | **CSV export** (feed + audit) | Non-technical sellers |
+| P1-2 | **Issue priority** (blocking vs advisory) | Actionable audit narrative |
+| P1-3 | **Drawer before → after** | Less JSON, more clarity |
+
+### 1.5 constraints (what we do *not* build)
+
+- **No** auth, payments, Shopify/Amazon/TikTok, PDF/image upload, dual-model validation.
+- **Share links:** file store under `.feedlayer-shares/` — reliable on local/self-hosted; Vercel may need KV later.
+- **Report version:** new runs emit `version: "1.5"`; **1.0 stored reports still load**.
+- **API compatibility:** `POST /api/process` kept; Home UI prefers `POST /api/process/stream`.
+- **SheetJS:** security note only — no forced migration in 1.5.
+
+### 1.5 definition of done
+
+1. Upload `test-full-demo.xlsx` → fix a mapping → process with visible batch progress → results share link opens in new tab.
+2. `npm run verify` passes including override + share tests.
+3. Docs: [`../1.5/README.md`](../1.5/README.md), DEPLOYMENT smoke section updated.
+
+### Deferred to 2.0
+
+Marketplace connectors, official OpenAI upload, user accounts, catalog DB, PDF/image ingestion, optional i18n UI.
+

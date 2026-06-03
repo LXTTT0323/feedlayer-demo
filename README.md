@@ -1,43 +1,35 @@
-# FeedLayer — Product 1.0 (complete)
+# FeedLayer — Product 1.5 (current)
 
 **Repository:** [github.com/LXTTT0323/feedlayer-demo](https://github.com/LXTTT0323/feedlayer-demo)
 
-Pilot **catalog audit** demo: upload **CSV** or **Excel (.xlsx)** with **worksheet picker**, paste **listing text**, or load **sample data** → **`ai_ready_feed`**, **`readiness_report`**, **`summary`**, dashboard exports.
+Shareable **catalog audit** demo: upload → **review column mapping** → **live progress** → **shareable results** + JSON/CSV exports.
 
-**Verified:** `npm run verify` — **100-SKU** rules path + multi-sheet Excel + LLM batch helpers.
+**Verified:** `npm run verify` — 100-SKU, overrides, share round-trip, multi-sheet Excel.
 
 ## Docs
 
 | Doc | Purpose |
 |-----|---------|
-| [`docs/demo-iterations/`](docs/demo-iterations/README.md) | Iteration history (0.5 → 1.0) |
-| [`docs/demo-iterations/1.0/README.md`](docs/demo-iterations/1.0/README.md) | 1.0 spec, LLM env |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | **Vercel deploy** + environment variables |
-| [`docs/SECURITY.md`](docs/SECURITY.md) | SheetJS / `npm audit` notes |
+| [`docs/demo-iterations/1.5/README.md`](docs/demo-iterations/1.5/README.md) | **1.5 spec & constraints** |
+| [`docs/demo-iterations/1.0/README.md`](docs/demo-iterations/1.0/README.md) | 1.0 baseline + 1.5 plan |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Vercel deploy + env vars |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | SheetJS notes |
 
 ## Samples
 
 | File | Purpose |
 |------|---------|
-| [`public/test-feedlayer-sample.csv`](public/test-feedlayer-sample.csv) | 5 rows — quick demo |
-| [`public/test-catalog-100.csv`](public/test-catalog-100.csv) | 100 rows — CI stress test |
-| [`public/test-multisheet.xlsx`](public/test-multisheet.xlsx) | 2 sheets — worksheet picker test |
-
-Regenerate: `npm run generate:catalog-100` · `npm run generate:multisheet-xlsx`
+| [`public/test-full-demo.xlsx`](public/test-full-demo.xlsx) | Full manual test (mapping + variants + gaps) |
+| [`public/test-catalog-100.csv`](public/test-catalog-100.csv) | 100-row CI stress test |
 
 ## API
 
-- `POST /api/process` — JSON (`type: csv|text|sample`) or multipart **`file`** (`.csv` / `.xlsx`), optional field **`sheet`** for Excel.
-- `POST /api/process/sheets` — multipart **`file`** (`.xlsx`) → `{ sheets: string[] }`.
-
-## Optional LLM (server env)
-
-**Primary:** `GEMINI_API_KEY` → Gemini **2.5 Pro**.  
-**Fallback:** `OPENAI_API_KEY` → only if Gemini fails (**LLM fallback pipeline**, not dual-model validation).  
-**Batching:** `FEEDLAYER_LLM_BATCH_SIZE` (default **25**), `FEEDLAYER_LLM_MAX_PRODUCTS` (default **500**).  
-No keys → **rules only**.
-
-Local: `.env.local`. Production: [Vercel env vars](docs/DEPLOYMENT.md).
+| Route | Purpose |
+|-------|---------|
+| `POST /api/process/preview` | Column mapping preview (CSV/XLSX) |
+| `POST /api/process/stream` | SSE progress + final report |
+| `POST /api/process` | Legacy one-shot JSON (unchanged) |
+| `POST /api/share` / `GET /api/share/[id]` | Shareable result links |
 
 ## Scripts
 
@@ -46,14 +38,6 @@ npm install && npm run dev
 npm run lint && npm run build && npm run verify
 ```
 
-## Remaining notes
-
-| Topic | Status |
-|-------|--------|
-| Deploy keys | Configure in Vercel dashboard before sharing the live URL |
-| SheetJS `xlsx` | Documented in [`docs/SECURITY.md`](docs/SECURITY.md); reassess before hard production |
-| LLM wording | Fallback only — do not call it “multi-model validation” |
-
 ## Stack
 
-Next.js, React, Tailwind, TypeScript, SheetJS (`xlsx`), optional Gemini + OpenAI.
+Next.js, React, Tailwind, TypeScript, SheetJS, optional Gemini + OpenAI (LLM fallback, batched).

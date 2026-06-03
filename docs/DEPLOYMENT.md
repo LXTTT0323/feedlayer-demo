@@ -42,11 +42,17 @@ Set these in **Project → Settings → Environment Variables** (Production + Pr
 
 Redeploy after changing env vars.
 
+## Share links (1.5)
+
+Reports are stored under `.feedlayer-shares/` on the server filesystem (gitignored). Works reliably on **`next dev`** and self-hosted **`next start`**. On Vercel serverless, share links may not persist across instances — use self-hosted or add KV for production.
+
+Optional: `FEEDLAYER_SHARE_DIR` overrides the storage directory.
+
 ## Smoke test after deploy
 
 1. Open your `*.vercel.app` URL.
 2. **Try sample data** (5 products) or upload `test-catalog-100.csv` (100 SKUs).
-3. Upload `test-multisheet.xlsx` — confirm worksheet picker appears.
+3. Upload `test-full-demo.xlsx` → review mapping → confirm → watch progress → **Copy share link** on results.
 4. **Results** page: score, mapping, three JSON downloads.
 
 ## Security

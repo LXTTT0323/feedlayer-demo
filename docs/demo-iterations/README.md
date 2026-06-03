@@ -5,7 +5,8 @@ Each subfolder documents one **shipped demo snapshot** (scope, test notes, and k
 | Folder | Name | App location |
 |--------|------|----------------|
 | `0.5/` | Product 0.5 — CSV + paste + sample, rule-based pipeline | Superseded by 1.0 UI/API shape |
-| `1.0/` | Product 1.0 — **complete**: CSV/XLSX + sheet picker, LLM batching, 100-SKU verify | **Current** |
+| `1.5/` | Product 1.5 — mapping editor, SSE progress, share links, CSV export | **Current** |
+| `1.0/` | Product 1.0 — CSV/XLSX + sheet picker, LLM batching, 100-SKU verify | Stable baseline |
 
 ---
 

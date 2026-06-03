@@ -10,6 +10,10 @@ import { runCatalogPipeline, runRulesOnlyFromCsvRows } from "../src/lib/processP
 import { parseCsvToTable } from "../src/lib/parseCsv";
 import { chunkProducts, llmBatchSize, maxLlmProducts } from "../src/lib/llm/enrichCatalog";
 import { listXlsxSheetNames, parseXlsxFirstSheet } from "../src/lib/parseExcel";
+import { applyColumnOverrides } from "../src/lib/tableOverrides";
+import { saveSharedReport, loadSharedReport } from "../src/lib/shareStore";
+import { feedToCsv } from "../src/lib/exportCsv";
+import { classifyIssue } from "../src/lib/issuePriority";
 
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -26,9 +30,9 @@ async function runCase(name: string, fn: () => Promise<void>) {
 }
 
 async function main() {
-  await runCase("Sample catalog: 5 products, v1 report shape", async () => {
+  await runCase("Sample catalog: 5 products, v1.5 report shape", async () => {
     const r = await runCatalogPipeline({ kind: "sample_catalog" });
-    assert(r.version === "1.0", "version");
+    assert(r.version === "1.5", "version");
     assert(r.ai_ready_feed.length === 5, "5 feed items");
     assert(r.readiness_report.products.length === 5, "5 readiness rows");
     assert(!("readiness" in (r.ai_ready_feed[0] as object)), "no readiness on feed item");
@@ -92,7 +96,7 @@ P-X,SKU-B,Widget,,12,USD,out of stock,Cat,https://example.com/a.jpg`;
     assert(r.ai_ready_feed.length === 100, "100 products");
     assert(r.readiness_report.products.length === 100, "100 readiness rows");
     assert(r.summary.products_processed === 100, "summary count");
-    assert(r.version === "1.0", "version");
+    assert(r.version === "1.5", "version");
   });
 
   await runCase("LLM batch chunking helpers", async () => {
@@ -119,6 +123,48 @@ P-X,SKU-B,Widget,,12,USD,out of stock,Cat,https://example.com/a.jpg`;
     });
     assert(r.ai_ready_feed.length === 5, "five products from selected sheet");
     assert(r.input.sheet === "Products", "report sheet name");
+  });
+
+  await runCase("Column override: map custom header to title", async () => {
+    const csv = `weird_title_col,sku,price,currency,availability,category,image_url
+My Product,SKU-1,10,USD,in stock,Cat,https://example.com/x.jpg`;
+    const table = parseCsvToTable(csv);
+    const remapped = applyColumnOverrides(table, { weird_title_col: "title" });
+    const r = await runCatalogPipeline({
+      kind: "csv_text",
+      csvText: csv,
+      columnOverrides: { weird_title_col: "title" },
+      skipLlm: true,
+    });
+    assert(remapped.rows[0]?.canonical.title === "My Product", "override applied");
+    assert(r.ai_ready_feed[0]?.title === "My Product", "title extracted");
+  });
+
+  await runCase("Share store round-trip", async () => {
+    const r = await runCatalogPipeline({ kind: "sample_catalog", skipLlm: true });
+    const id = await saveSharedReport(r);
+    const loaded = await loadSharedReport(id);
+    assert(loaded?.version === "1.5", "shared version");
+    assert(loaded?.ai_ready_feed.length === 5, "shared products");
+  });
+
+  await runCase("CSV export helpers", async () => {
+    const r = await runCatalogPipeline({ kind: "sample_catalog", skipLlm: true });
+    const csv = feedToCsv(r);
+    assert(csv.includes("product_id"), "feed csv header");
+    assert(classifyIssue("variants[0].price.amount") === "blocking", "blocking tier");
+  });
+
+  await runCase("Export preview helpers", async () => {
+    const { parseCsvPreview, truncateJsonPreview } = await import("../src/lib/previewExport");
+    const r = await runCatalogPipeline({ kind: "sample_catalog", skipLlm: true });
+    const csv = feedToCsv(r);
+    const table = parseCsvPreview(csv, 3);
+    assert(table.headers.includes("product_id"), "csv preview headers");
+    assert(table.rows.length <= 3, "csv preview row cap");
+    const json = JSON.stringify(r.ai_ready_feed);
+    const t = truncateJsonPreview(json, 100);
+    assert(t.truncated || json.length <= 100, "json truncate");
   });
 
   console.log("");

@@ -32,16 +32,18 @@ export type ParsedTable = {
   column_mapping: ReturnType<typeof buildColumnMappingSummary>;
   /** Set when source is XLSX (first sheet name). */
   sheet_name?: string;
+  /** Original header row order (CSV/XLSX). */
+  raw_headers: string[];
 };
 
 export function parseCsvToTable(csvText: string): ParsedTable {
   const trimmed = csvText.replace(/^\uFEFF/, "").trim();
   if (!trimmed) {
-    return { rows: [], column_mapping: { fields: [] } };
+    return { rows: [], column_mapping: { fields: [] }, raw_headers: [] };
   }
   const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length === 0) {
-    return { rows: [], column_mapping: { fields: [] } };
+    return { rows: [], column_mapping: { fields: [] }, raw_headers: [] };
   }
 
   const rawHeaders = splitCsvLine(lines[0]).map((h) => h.trim());
@@ -52,7 +54,7 @@ export function parseCsvToTable(csvText: string): ParsedTable {
     const cols = splitCsvLine(line);
     rows.push(rowFromValues(rawHeaders, cols));
   }
-  return { rows, column_mapping };
+  return { rows, column_mapping, raw_headers: rawHeaders };
 }
 
 /** @deprecated Use parseCsvToTable for mapping metadata; kept for scripts/tests. */

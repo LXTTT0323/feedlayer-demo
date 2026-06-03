@@ -15,15 +15,15 @@ export function parseXlsxFirstSheet(buffer: ArrayBuffer, sheetName?: string): Pa
   const wb = XLSX.read(buffer, { type: "array", cellDates: false });
   const name = sheetName ?? wb.SheetNames[0];
   if (!name) {
-    return { rows: [], column_mapping: { fields: [] } };
+    return { rows: [], column_mapping: { fields: [] }, raw_headers: [] };
   }
   const sheet = wb.Sheets[name];
   if (!sheet) {
-    return { rows: [], column_mapping: { fields: [] } };
+    return { rows: [], column_mapping: { fields: [] }, raw_headers: [] };
   }
   const aoa = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "", raw: false }) as string[][];
   if (!aoa || aoa.length === 0) {
-    return { rows: [], column_mapping: { fields: [] } };
+    return { rows: [], column_mapping: { fields: [] }, raw_headers: [] };
   }
 
   const rawHeaders = (aoa[0] ?? []).map((c) => String(c ?? "").trim());
@@ -36,5 +36,5 @@ export function parseXlsxFirstSheet(buffer: ArrayBuffer, sheetName?: string): Pa
     if (values.every((v) => v === "")) continue;
     rows.push(rowFromValues(rawHeaders, values));
   }
-  return { rows, column_mapping, sheet_name: name };
+  return { rows, column_mapping, sheet_name: name, raw_headers: rawHeaders };
 }
